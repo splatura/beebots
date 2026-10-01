@@ -161,6 +161,7 @@ in [`.env.example`](.env.example). The common ones:
 | setting | default | what it does |
 |---|---|---|
 | `PUBLIC_DOMAIN` | blank | A domain pointed at your server. Caddy then gets an HTTPS certificate on its own. **Recommended**: without it, the Setup page and your keys travel over plain HTTP. |
+| `OKX_SITE` | `eea` | Which OKX venue the bees trade. `eea` = OKX EEA X-Perps. `global` = OKX's global site (OKX Australia accounts), USDT perpetual swaps, paper only for now. |
 | `TICK_MS` | `10000` | How often each bee asks Jev. Faster is more exciting and costs more (see [docs/COSTS.md](docs/COSTS.md)). |
 | `JEV_DAILY_USD_CAP` | `2` | Hard daily cap on Jev spend. When it's hit, every bee holds until 00:00 UTC. |
 | `BEE_START_EQUITY_USD` | `333` | Paper money per bee. |

@@ -2,19 +2,23 @@
 // pnpm universe
 import { gateUniverse } from "../market/universe.js";
 import { createPublicApi } from "../okx/public.js";
+import { createOkxPublicRest } from "../okx/rest.js";
+import { VENUES, type SiteId } from "../okx/venue.js";
 
 const minVol = Number(process.env.MIN_24H_VOL_USD || 1_000_000);
 const demo = process.argv.includes("--demo");
-const api = createPublicApi(process.env.OKX_API_BASE || "https://eea.okx.com", demo);
+const venue = VENUES[(process.env.OKX_SITE === "global" ? "global" : "eea") as SiteId];
+const apiBase = process.env.OKX_API_BASE?.trim().replace(/\/+$/, "") || venue.apiBase;
+const api = createPublicApi(apiBase, demo, createOkxPublicRest({ apiBase, timeoutMs: 15_000, site: venue.site }), venue);
 if (demo) console.log("OKX DEMO market");
 
 const [instruments, tickers] = await Promise.all([api.instruments(), api.tickers()]);
 const live = instruments.filter((i) => i.state === "live");
 const byKind = live.reduce<Record<string, number>>((a, i) => ((a[i.kind] = (a[i.kind] ?? 0) + 1), a), {});
-console.log(`X-Perps: ${instruments.length} total, ${live.length} live`, byKind);
+console.log(`${venue.label}: ${instruments.length} total, ${live.length} live`, byKind);
 
 for (const [label, gate] of [["boozy (15 bp)", Number(process.env.BOOZY_SPREAD_GATE_BPS || 15)], ["bizzy (5 bp)", Number(process.env.BIZZY_SPREAD_GATE_BPS || 5)]] as const) {
-  const u = gateUniverse(instruments, tickers, { min24hVolUsd: minVol, spreadGateBps: gate, allowNonCrypto: false });
+  const u = gateUniverse(instruments, tickers, { min24hVolUsd: minVol, spreadGateBps: gate, allowNonCrypto: false, matches: venue.matches, max: Number(process.env.UNIVERSE_MAX) || venue.universeMax });
   console.log(`\n${label}: ${u.tradable.length} tradable, ${u.spreadBlocked.length} blocked by spread`);
   for (const id of u.tradable) {
     const t = tickers.get(id)!;

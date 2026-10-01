@@ -41,6 +41,8 @@ export interface RestOpts {
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
   userAgent?: string;
+  /** The kit's site name for this base URL (default "eea"). */
+  site?: string;
 }
 
 export interface GetOpts {
@@ -64,7 +66,7 @@ export function createOkxPublicRest(opts: RestOpts): OkxPublicRest {
   const maxConcurrent = opts.maxConcurrent ?? 8;
   const maxRlRetries = opts.maxRateLimitRetries ?? 3;
   const client = new OkxPublicClient(
-    { baseUrl: opts.apiBase.replace(/\/+$/, ""), timeoutMs: opts.timeoutMs, userAgent: opts.userAgent ?? "beebots (okx-agent-trade-kit core 1.4.8)", site: "eea" },
+    { baseUrl: opts.apiBase.replace(/\/+$/, ""), timeoutMs: opts.timeoutMs, userAgent: opts.userAgent ?? "beebots (okx-agent-trade-kit core 1.4.8)", site: opts.site ?? "eea" },
     opts.fetch,
   );
   const cache = new Map<string, { at: number; data: unknown }>();

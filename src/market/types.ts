@@ -36,7 +36,8 @@ export interface Candle {
 
 export interface FundingNow {
   rate: number;
-  nextFundingTime: number;
+  /** When the current funding period settles (OKX's `fundingTime`), ms. */
+  fundingAt: number;
 }
 
 /** Everything the snapshot builder and risk layer may know about one coin. Numbers only. */
@@ -64,6 +65,8 @@ export interface CoinStats {
   // funding + OI
   fundingPct: number | null;
   fundingZ: number | null;
+  /** When the coin's current funding period settles (ms), null when unknown. */
+  fundingAt: number | null;
   oiUsd: number | null;
   oiChg1hPct: number | null;
   // news (kit news module; null when unavailable)

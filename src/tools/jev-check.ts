@@ -7,13 +7,14 @@ import { Jev } from "../jev.js";
 import { freshBee } from "../ledger.js";
 import { MarketFeed } from "../market/data.js";
 import { createPublicApi } from "../okx/public.js";
+import { createOkxPublicRest } from "../okx/rest.js";
 import { buildSnapshot } from "../snapshot.js";
 
 const N = Number(process.argv[2] ?? 100);
 const cfg = loadConfig({ ...process.env, DRY_RUN: "true" });
 const feed = new MarketFeed(
-  createPublicApi(cfg.okx.apiBase),
-  { min24hVolUsd: cfg.universe.min24hVolUsd, allowNonCrypto: false, spreadGateBps: Math.max(...BEES.map((b) => cfg.bees[b].spreadGateBps)), trendCoins: [...BREEZY_COINS] },
+  createPublicApi(cfg.okx.apiBase, false, createOkxPublicRest({ apiBase: cfg.okx.apiBase, timeoutMs: 15_000, site: cfg.okx.site }), cfg.okx.venue),
+  { min24hVolUsd: cfg.universe.min24hVolUsd, allowNonCrypto: false, spreadGateBps: Math.max(...BEES.map((b) => cfg.bees[b].spreadGateBps)), trendCoins: [...BREEZY_COINS], venue: cfg.okx.venue, universeMax: cfg.universe.max },
   null,
   () => [],
 );

@@ -75,7 +75,7 @@ export function Header({ snap, connected, stalled, soundOn, onSound }: { snap: S
             </a>
           ) : null}
           <span className="dim">
-            day {day} · 3 bees · OKX X-Perps · not financial advice
+            day {day} · 3 bees · {PROFILE.venue?.label ?? "OKX X-Perps"} · not financial advice
           </span>
         </div>
       </div>
@@ -83,7 +83,7 @@ export function Header({ snap, connected, stalled, soundOn, onSound }: { snap: S
       <div className="counters">
         <Counter label="Total P&L" value={t ? signed(t.pnlUsd) : "–"} tone={t ? (t.pnlUsd >= 0 ? "good" : "bad") : undefined} sub={`${orders} orders`} />
         <Counter label="Fees paid" value={t ? money(t.feesUsd) : "–"} sub="taker 0.05%" />
-        <Counter label="Funding" value={t ? signed(t.fundingUsd) : "–"} sub="00 · 08 · 16 UTC" />
+        <Counter label="Funding" value={t ? signed(t.fundingUsd) : "–"} sub={PROFILE.venue?.funding === "per-instrument" ? "per coin, own clock" : "00 · 08 · 16 UTC"} />
         <Counter
           label="Jev spend"
           value={t ? money(t.jevUsd, 4) : "–"}

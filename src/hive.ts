@@ -117,6 +117,8 @@ export interface HiveOpts {
   /** HIVE_URL, no trailing slash. */
   url: string;
   mode: Mode;
+  /** false: this engine's venue can't take part (the board replays fills against OKX EEA prices). Default true. */
+  venueSupported?: boolean;
   source: () => HiveInput;
   db: Pick<Db, "hiveFills">;
   /** The owner password's scrypt hash (Setup, or OWNER_PASSWORD), null when none is set. */
@@ -156,8 +158,15 @@ export class Hive {
     return !!this.state?.joined;
   }
 
+  /** Why this engine can't join or report, or null when it can. */
+  private get blocked(): string | null {
+    if (this.o.mode === "live") return "The Hive is for paper trading only, and this engine runs MODE=live.";
+    if (this.o.venueSupported === false) return "The Hive runs on OKX EEA paper trading only.";
+    return null;
+  }
+
   private get paper(): boolean {
-    return this.o.mode !== "live";
+    return this.blocked === null;
   }
 
   /**
@@ -173,7 +182,7 @@ export class Hive {
           if (this.paper) {
             this.join();
             log.info("joined the Hive, as chosen on the Setup page");
-          } else log.warn("not joining the Hive: it is paper only, and this engine runs MODE=live");
+          } else log.warn("not joining the Hive", { reason: this.blocked });
         } else if (!setup.hive && this.joined) {
           // Setup was run again and the answer this time was "Not now".
           void this.leave().catch((err) => log.warn("could not leave the Hive", { err: safeError(err) }));
@@ -182,7 +191,7 @@ export class Hive {
     }
     if (!this.joined) return;
     if (!this.paper) {
-      log.warn("the Hive is paper only: not reporting while MODE=live (leave from the dashboard, or go back to paper)");
+      log.warn("not reporting to the Hive", { reason: this.blocked });
       return;
     }
     this.schedule(FIRST_REPORT_MS);
@@ -196,7 +205,7 @@ export class Hive {
 
   /** New hive id and key. The first report registers them with the server. */
   join(): void {
-    if (!this.paper) throw new Error("The Hive is for paper trading only.");
+    if (!this.paper) throw new Error(this.blocked!);
     if (this.joined) return;
     this.state = { joined: true, hiveId: randomUUID(), key: randomBytes(32).toString("hex"), joinedAt: this.now() };
     writePrivateJson(this.o.path, this.state);
@@ -261,7 +270,7 @@ export class Hive {
     const st = this.state;
     if (!st?.joined || !st.hiveId || !st.key) return null;
     if (!this.paper) {
-      log.warn("the Hive is paper only: not reporting while MODE=live");
+      log.warn("not reporting to the Hive", { reason: this.blocked });
       return null;
     }
     if (this.reporting) return EVERY_S;
@@ -372,6 +381,7 @@ export class Hive {
     return {
       joined: this.joined,
       paper: this.paper,
+      blocked: this.blocked,
       board: this.o.url,
       lastReportAt: this.lastReportAt,
       verified: this.verified,
@@ -415,7 +425,7 @@ export class Hive {
     }
     if (path === "/hive/join") {
       if (!this.paper) {
-        send(res, 409, { error: "The Hive is for paper trading only, and this engine runs MODE=live." });
+        send(res, 409, { error: this.blocked });
         return true;
       }
       if (!this.joined) {

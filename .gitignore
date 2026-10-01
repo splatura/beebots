@@ -8,3 +8,7 @@ data/
 *.sqlite-*
 .DS_Store
 .gstack/
+CLAUDE.md
+docs/superpowers/
+.superpowers/
+.remember/

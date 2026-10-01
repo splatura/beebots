@@ -9,6 +9,7 @@ import type { EventBus } from "./events.js";
 import type { Executor } from "./exec/executor.js";
 import { contractsFor, roundToLot } from "./exec/sizing.js";
 import type { Jev, JevAnswer, JevResult } from "./jev.js";
+import { nextFunding, type FundingTrack } from "./funding.js";
 import { applyFill, applyFunding, freshBee, mark, rollDay, sizedRiskUsd } from "./ledger.js";
 import { log } from "./log.js";
 import type { MarketFeed } from "./market/data.js";
@@ -73,6 +74,7 @@ export class Engine {
   private lastEquityAt = 0;
   private lastReconAt = 0;
   private lastFundingSlot: number;
+  private fundingTrack: Partial<Record<BeeId, FundingTrack>> = {};
   private seq = 0;
   private jevDownAlerted = false;
   private recon: { ok: boolean | null; detail: string; ts: number } = { ok: null, detail: "not run yet", ts: 0 };
@@ -611,24 +613,48 @@ export class Engine {
 
   // ---------- funding, reconciliation, ranks ----------
 
-  /** MODE=dry: charge funding at 00/08/16 UTC using the current rate (long pays a positive rate). */
+  /**
+   * MODE=dry: charge funding using the current rate (long pays a positive rate). EEA: at 00/08/16 UTC. Global swaps:
+   * at each held coin's own settlement time.
+   */
   private simulateFunding(now: number) {
+    const view = this.d.feed.view();
+    if (this.d.cfg.okx.venue.funding === "per-instrument") {
+      for (const id of BEES) {
+        const p = this.bees[id].position;
+        if (!p) {
+          delete this.fundingTrack[id];
+          continue;
+        }
+        const s = view.stats.get(p.instId);
+        const r = nextFunding(this.fundingTrack[id], p.instId, s?.fundingAt ?? null, now);
+        // A charge that bailed (no stats yet) keeps the old track, so the next tick retries the same settlement.
+        if (r.charge !== null && !this.chargeSimFunding(id, now, `sim-${id}-${p.instId}-${r.charge}`)) continue;
+        if (r.track) this.fundingTrack[id] = r.track;
+        else delete this.fundingTrack[id];
+      }
+      return;
+    }
     const slot = fundingSlot(now);
     if (slot === this.lastFundingSlot) return;
     this.lastFundingSlot = slot;
+    for (const id of BEES) this.chargeSimFunding(id, now, `sim-${id}-${slot}`);
+  }
+
+  /** True when the charge was applied or already recorded; false when it bailed before reaching the ledger. */
+  private chargeSimFunding(id: BeeId, now: number, billId: string): boolean {
     const view = this.d.feed.view();
-    for (const id of BEES) {
-      const bee = this.bees[id];
-      const p = bee.position;
-      const s = p ? view.stats.get(p.instId) : undefined;
-      const inst = p ? view.instruments.get(p.instId) : undefined;
-      if (!p || !s || !inst || s.fundingPct === null) continue;
-      const amount = -(p.side === "long" ? 1 : -1) * (s.fundingPct / 100) * positionNotional(p, s.mid, inst.ctVal);
-      if (this.d.db.insertFunding(id, now, p.instId, amount, `sim-${id}-${slot}`)) {
-        applyFunding(bee, amount);
-        this.d.bus.emit("funding", { bee: id, coin: p.coin, amountUsd: Number(amount.toFixed(4)) }, now);
-      }
+    const bee = this.bees[id];
+    const p = bee.position;
+    const s = p ? view.stats.get(p.instId) : undefined;
+    const inst = p ? view.instruments.get(p.instId) : undefined;
+    if (!p || !s || !inst || s.fundingPct === null) return false;
+    const amount = -(p.side === "long" ? 1 : -1) * (s.fundingPct / 100) * positionNotional(p, s.mid, inst.ctVal);
+    if (this.d.db.insertFunding(id, now, p.instId, amount, billId)) {
+      applyFunding(bee, amount);
+      this.d.bus.emit("funding", { bee: id, coin: p.coin, amountUsd: Number(amount.toFixed(4)) }, now);
     }
+    return true;
   }
 
   /** MODE=demo/live: record funding bills (type 8) as their own ledger rows. */

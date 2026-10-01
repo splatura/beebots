@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { OkxApiError, RateLimitError } from "../src/okx/kit/errors.js";
 import { buildQueryString } from "../src/okx/kit/public-client.js";
-import { createPublicApi, PUBLIC_TTL_MS } from "../src/okx/public.js";
+import { createPublicApi, fetchCoins, PUBLIC_TTL_MS } from "../src/okx/public.js";
 import { createOkxPublicRest, OKX_PUBLIC_LIMITS, type RestOpts } from "../src/okx/rest.js";
+import { VENUES } from "../src/okx/venue.js";
 
 interface Call {
   url: string;
@@ -95,6 +96,61 @@ describe("in-process public market data", () => {
     const inst = await createPublicApi("https://eea.okx.com", false, rest(m2.fn).r).instruments();
     expect(inst).toEqual([{ instId: "ETH-USD_UM_XPERP-310404", coin: "ETH", kind: "crypto", ctVal: 0.01, lotSz: 1, minSz: 1, tickSz: 0.01, state: "live" }]);
     expect(m2.calls[0]!.url).toBe("https://eea.okx.com/api/v5/public/instruments?instType=FUTURES");
+  });
+
+  it("global: keeps only USDT swaps from tickers, instruments and open interest, asking for SWAP", async () => {
+    const g = VENUES.global;
+    const tick = { instId: "BTC-USDT-SWAP", last: "100", bidPx: "99.9", askPx: "100.1", volCcy24h: "10", open24h: "98", ts: "1" };
+    const m = mockFetch([ok([tick, { ...tick, instId: "BTC-USDC-SWAP" }, { ...tick, instId: "BTC-USD-SWAP" }])]);
+    const t = await createPublicApi("https://www.okx.com", false, rest(m.fn).r, g).tickers();
+    expect([...t.keys()]).toEqual(["BTC-USDT-SWAP"]);
+    expect(t.get("BTC-USDT-SWAP")!.vol24hUsd).toBe(1000);
+    expect(m.calls[0]!.url).toBe("https://eea.okx.com/api/v5/market/tickers?instType=SWAP");
+
+    const m2 = mockFetch([
+      ok([
+        { instId: "ETH-USDT-SWAP", instCategory: "1", ctVal: "0.1", lotSz: "0.01", minSz: "0.01", tickSz: "0.01", state: "live" },
+        { instId: "AAPL-USDT-SWAP", instCategory: "3", ctVal: "1", lotSz: "1", minSz: "1", tickSz: "0.01", state: "live" },
+        { instId: "ODD-USDT-SWAP", ctVal: "1", lotSz: "1", minSz: "1", tickSz: "0.01", state: "live" },
+        { instId: "ETH-USDC-SWAP", instCategory: "1", ctVal: "0.1", lotSz: "1", minSz: "1", tickSz: "0.01", state: "live" },
+      ]),
+    ]);
+    const inst = await createPublicApi("https://www.okx.com", false, rest(m2.fn).r, g).instruments();
+    expect(inst.map((i) => [i.instId, i.kind])).toEqual([
+      ["ETH-USDT-SWAP", "crypto"],
+      ["AAPL-USDT-SWAP", "stock"],
+      ["ODD-USDT-SWAP", "unknown"],
+    ]);
+    expect(m2.calls[0]!.url).toBe("https://eea.okx.com/api/v5/public/instruments?instType=SWAP");
+
+    const m3 = mockFetch([ok([{ instId: "BTC-USDT-SWAP", oiUsd: "5" }, { instId: "BTC-USD_UM_XPERP-310404", oiUsd: "7" }])]);
+    const oi = await createPublicApi("https://www.okx.com", false, rest(m3.fn).r, g).openInterest();
+    expect([...oi.entries()]).toEqual([["BTC-USDT-SWAP", 5]]);
+    expect(m3.calls[0]!.url).toBe("https://eea.okx.com/api/v5/public/open-interest?instType=SWAP");
+  });
+
+  it("funding reports the settlement time as fundingAt", async () => {
+    const m = mockFetch([ok([{ instId: "BTC-USDT-SWAP", fundingRate: "0.0001", fundingTime: "1790841600000", nextFundingTime: "1790870400000" }])]);
+    const f = await createPublicApi("https://www.okx.com", false, rest(m.fn).r, VENUES.global).funding("BTC-USDT-SWAP");
+    expect(f).toEqual({ rate: 0.0001, fundingAt: 1790841600000 });
+  });
+
+  it("fetchCoins lists the venue's live crypto coins", async () => {
+    const real = globalThis.fetch;
+    globalThis.fetch = mockFetch([
+      ok([
+        { instId: "SOL-USDT-SWAP", instCategory: "1", state: "live" },
+        { instId: "BTC-USDT-SWAP", instCategory: "1", state: "live" },
+        { instId: "TSLA-USDT-SWAP", instCategory: "3", state: "live" },
+        { instId: "NEW-USDT-SWAP", instCategory: "1", state: "preopen" },
+        { instId: "BTC-USDC-SWAP", instCategory: "1", state: "live" },
+      ]),
+    ]).fn;
+    try {
+      expect(await fetchCoins(VENUES.global)).toEqual(["BTC", "SOL"]);
+    } finally {
+      globalThis.fetch = real;
+    }
   });
 
   it("turns an OKX error code into an error carrying that code", async () => {

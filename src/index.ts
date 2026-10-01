@@ -16,6 +16,7 @@ import { createOkxCli } from "./okx/cli.js";
 import { createNewsSource } from "./okx/news.js";
 import { createPublicApi } from "./okx/public.js";
 import { createOkxPublicRest } from "./okx/rest.js";
+import { resolveApiBase, VENUES } from "./okx/venue.js";
 import { safeError } from "./redact.js";
 import { startServer } from "./server.js";
 import { loadSettings, STYLE_INFO } from "./settings.js";
@@ -33,6 +34,7 @@ function profile(cfg: Config | null) {
     setup: cfg === null,
     mode: cfg?.mode ?? "dry",
     links: cfg?.links ?? null,
+    venue: cfg ? { label: cfg.okx.venue.label, funding: cfg.okx.venue.funding } : null,
     bees: cfg
       ? BEES.map((id) => {
           const s = cfg.slots[id];
@@ -56,13 +58,21 @@ function profile(cfg: Config | null) {
 /** No Jev key in the environment and no Setup file yet: serve only the Setup page until the owner fills it in. */
 function runSetup() {
   const env = process.env;
+  const venue = VENUES[env.OKX_SITE?.trim() === "global" ? "global" : "eea"];
+  let okxApiBase = venue.apiBase;
+  try {
+    okxApiBase = resolveApiBase(venue, env.OKX_API_BASE);
+  } catch (err) {
+    log.warn("OKX_API_BASE ignored on Setup", { reason: (err as Error).message });
+  }
   const setup = new Setup({
     settingsPath: SETTINGS_PATH,
     jevModel: env.JEV_MODEL?.trim() || "jev-1.13.0",
     openai: { apiKey: env.OPENAI_API_KEY?.trim() || undefined, textModel: env.OPENAI_TEXT_MODEL?.trim() || "gpt-5.4-nano", imageModel: env.OPENAI_IMAGE_MODEL?.trim() || "gpt-image-2" },
     refDir: REF_DIR,
     windowMin: Math.max(1, Number(env.SETUP_WINDOW_MIN) || 120),
-    okxApiBase: env.OKX_API_BASE?.trim().replace(/\/+$/, "") || "https://eea.okx.com",
+    venue,
+    okxApiBase,
     onSaved: () => {
       log.info("settings saved; exiting so Docker restarts the engine with them");
       process.exit(0);
@@ -87,7 +97,7 @@ async function main() {
     throw err;
   }
   setLogLevel(cfg.logLevel);
-  log.info("beebots engine starting", { mode: cfg.mode, tickMs: cfg.tickMs, dataRefreshMs: cfg.dataRefreshMs, jevModel: cfg.jev.model });
+  log.info("beebots engine starting", { mode: cfg.mode, tickMs: cfg.tickMs, dataRefreshMs: cfg.dataRefreshMs, jevModel: cfg.jev.model, site: cfg.okx.site });
 
   const db = new Db(cfg.dbPath);
   const bus = new EventBus(db);
@@ -95,7 +105,8 @@ async function main() {
   const cli = createOkxCli({ site: cfg.okx.site, timeoutMs: cfg.okx.cliTimeoutMs });
   // Public market data runs in-process on the kit's REST client; the CLI (one child process per call) is kept for
   // the signed per-bee calls only.
-  const api = createPublicApi(cfg.okx.apiBase, cfg.mode === "demo", createOkxPublicRest({ apiBase: cfg.okx.apiBase, timeoutMs: cfg.okx.cliTimeoutMs }));
+  const venue = cfg.okx.venue;
+  const api = createPublicApi(cfg.okx.apiBase, cfg.mode === "demo", createOkxPublicRest({ apiBase: cfg.okx.apiBase, timeoutMs: cfg.okx.cliTimeoutMs, site: venue.site }), venue);
   const demo = cfg.mode === "demo";
 
   let engine: Engine | null = null;
@@ -110,6 +121,8 @@ async function main() {
       allowNonCrypto: cfg.universe.allowNonCrypto,
       spreadGateBps: Math.max(...STYLES.map((s) => cfg.bees[s].spreadGateBps)),
       trendCoins: [...BREEZY_COINS],
+      venue,
+      universeMax: cfg.universe.max,
     },
     news,
     held,
@@ -143,6 +156,7 @@ async function main() {
 
   // The Hive (opt-in public leaderboard, paper only).
   const hive = new Hive({
+    venueSupported: venue.hive,
     ownerPasswordHash: () => ownerPasswordHash,
     path: hivePath(cfg.settingsPath),
     url: cfg.hive.url,

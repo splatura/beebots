@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { resolveApiBase, VENUES, type SiteId, type Venue } from "./okx/venue.js";
 import { STYLE_INFO, STYLES, type Settings, type StyleId } from "./settings.js";
 
 /** Three bee slots. Each one trades one of the three styles (settings.ts); two bees may share a style. */
@@ -73,8 +74,10 @@ const EnvSchema = z.object({
   TICK_MS: num(10_000),
   DATA_REFRESH_MS: num(60_000),
 
-  OKX_SITE: z.literal("eea").optional().default("eea"),
-  OKX_API_BASE: str("https://eea.okx.com"),
+  // eea = OKX EEA X-Perps (default). global = OKX's global site (OKX Australia accounts): USDT perpetual swaps, paper only for now.
+  OKX_SITE: z.preprocess((v) => (typeof v === "string" && v.trim() !== "" ? v.trim() : undefined), z.enum(["eea", "global"]).optional().default("eea")),
+  // Blank = the venue's own base. Another host than OKX_SITE's is refused.
+  OKX_API_BASE: opt,
   OKX_CLI_TIMEOUT_MS: num(15_000),
 
   BEE_START_EQUITY_USD: num(333),
@@ -88,6 +91,8 @@ const EnvSchema = z.object({
   LIVE_RAMP_HOURS: num(2),
   MIN_24H_VOL_USD: num(1_000_000),
   ALLOW_NON_CRYPTO: bool(false),
+  // Keep at most this many coins after the volume and spread gates. Blank = the venue's default (EEA: no cap, global: 30).
+  UNIVERSE_MAX: opt,
   TAKER_FEE_RATE: num(0.0005),
 
   BREEZY_MIN_OPEN_PROB: num(0.7),
@@ -169,7 +174,7 @@ export interface Config {
   jev: { apiKey: string; model: string; timeoutMs: number; dailyUsdCap: number; usdPerMTok: number };
   tickMs: number;
   dataRefreshMs: number;
-  okx: { site: "eea"; apiBase: string; cliTimeoutMs: number };
+  okx: { site: SiteId; venue: Venue; apiBase: string; cliTimeoutMs: number };
   risk: {
     startEquityUsd: number;
     maxLeverage: number;
@@ -181,7 +186,7 @@ export interface Config {
     liveRampHours: number;
     takerFeeRate: number;
   };
-  universe: { min24hVolUsd: number; allowNonCrypto: boolean };
+  universe: { min24hVolUsd: number; allowNonCrypto: boolean; max: number };
   /** Knobs per trading style. */
   bees: Record<StyleId, BeeKnobs>;
   breezy: { minOpenProb: number; minSizeUsd: number };
@@ -216,6 +221,21 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, settings: Setti
 
   if (e.MAX_LEVERAGE > 2 || e.MAX_LEVERAGE <= 0) throw new ConfigError("MAX_LEVERAGE must be in (0, 2]. Hard rule 3.");
   if (e.MAX_FLAT_MINUTES < 0) throw new ConfigError("MAX_FLAT_MINUTES must be >= 0");
+
+  const venue = VENUES[e.OKX_SITE];
+  if (venue.site === "global" && mode !== "dry") throw new ConfigError("OKX_SITE=global supports MODE=dry for now; demo and live come next.");
+  let apiBase: string;
+  try {
+    apiBase = resolveApiBase(venue, e.OKX_API_BASE);
+  } catch (err) {
+    throw new ConfigError((err as Error).message);
+  }
+  let universeMax = venue.universeMax;
+  if (e.UNIVERSE_MAX !== undefined) {
+    const n = Number(e.UNIVERSE_MAX);
+    if (!Number.isInteger(n) || n < 1) throw new ConfigError("UNIVERSE_MAX must be a whole number of 1 or more");
+    universeMax = n;
+  }
 
   const slots = {} as Record<BeeId, SlotProfile>;
   BEES.forEach((id, i) => {
@@ -274,7 +294,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, settings: Setti
     },
     tickMs: Math.max(1000, e.TICK_MS),
     dataRefreshMs: Math.max(15_000, e.DATA_REFRESH_MS),
-    okx: { site: e.OKX_SITE, apiBase: e.OKX_API_BASE.replace(/\/+$/, ""), cliTimeoutMs: e.OKX_CLI_TIMEOUT_MS },
+    okx: { site: venue.site, venue, apiBase, cliTimeoutMs: e.OKX_CLI_TIMEOUT_MS },
     risk: {
       startEquityUsd: e.BEE_START_EQUITY_USD,
       maxLeverage: e.MAX_LEVERAGE,
@@ -286,14 +306,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, settings: Setti
       liveRampHours: e.LIVE_RAMP_HOURS,
       takerFeeRate: e.TAKER_FEE_RATE,
     },
-    universe: { min24hVolUsd: e.MIN_24H_VOL_USD, allowNonCrypto: e.ALLOW_NON_CRYPTO },
+    universe: { min24hVolUsd: e.MIN_24H_VOL_USD, allowNonCrypto: e.ALLOW_NON_CRYPTO, max: universeMax },
     bees: { bizzy: knobs("bizzy"), breezy: knobs("breezy"), boozy: knobs("boozy") },
     breezy: { minOpenProb: e.BREEZY_MIN_OPEN_PROB, minSizeUsd: e.BREEZY_MIN_SIZE_USD },
     bizzy: { sizeFraction: e.BIZZY_SIZE_FRACTION, universeSize: e.BIZZY_UNIVERSE_SIZE, timeStopMinutes: e.BIZZY_TIME_STOP_MINUTES },
     boozy: { candidates: e.BOOZY_CANDIDATES },
     creds,
     server: { port: e.ENGINE_PORT, bind: e.ENGINE_BIND },
-    dbPath: e.DB_PATH.replaceAll("{mode}", mode),
+    dbPath: e.DB_PATH.replaceAll("{mode}", venue.site === "eea" ? mode : `${mode}-global`),
     logLevel: e.LOG_LEVEL,
     alertWebhookUrl: e.ALERT_WEBHOOK_URL,
   };

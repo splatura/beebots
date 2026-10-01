@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { loadConfig } from "../src/config.js";
+import { VENUES } from "../src/okx/venue.js";
 import type { BeeDesign } from "../src/openai.js";
 import { startServer } from "../src/server.js";
 import { isReservedName, loadSettings, SettingsSchema } from "../src/settings.js";
@@ -46,6 +47,7 @@ async function boot(opts: { designs?: BeeDesign[] } = {}) {
     jevModel: "jev-test",
     openai: { textModel: "t", imageModel: "i" },
     refDir: dir,
+    venue: VENUES.eea,
     okxApiBase: "https://okx.invalid",
     windowMin: 120,
     now: () => now,
@@ -244,7 +246,7 @@ describe("designing a bee", () => {
     const t = await boot({ designs: [design({ coins: ["FAKECOIN", "NOPE"] })] });
     const r = await t.post("/setup/design", { openaiKey: "sk-test", description: "a bee for FAKECOIN" });
     expect(r.status).toBe(422);
-    expect(((await r.json()) as { error: string }).error).toMatch(/FAKECOIN.*aren't tradable.*again/);
+    expect(((await r.json()) as { error: string }).error).toMatch(/FAKECOIN.*aren't tradable on OKX right now.*again/);
   });
 });
 

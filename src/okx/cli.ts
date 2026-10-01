@@ -11,6 +11,7 @@ import { execFile } from "node:child_process";
 import { createRequire } from "node:module";
 import type { BeeId, OkxCreds } from "../config.js";
 import { redactString } from "../redact.js";
+import type { SiteId } from "./venue.js";
 
 const require = createRequire(import.meta.url);
 const CLI_JS = require.resolve("@okx_ai/okx-trade-cli/dist/index.js");
@@ -53,7 +54,7 @@ export function parseCliError(stderr: string, stdout: string): OkxCliError {
   return new OkxCliError(code, redactString(line.replace(/^Error:\s*/, "")).slice(0, 240));
 }
 
-export function createOkxCli(opts: { site: "eea"; timeoutMs: number; maxConcurrent?: number }): OkxCli {
+export function createOkxCli(opts: { site: SiteId; timeoutMs: number; maxConcurrent?: number }): OkxCli {
   let active = 0;
   const queue: Array<() => void> = [];
   const maxConcurrent = opts.maxConcurrent ?? 6;

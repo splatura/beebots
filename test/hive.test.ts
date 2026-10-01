@@ -50,12 +50,12 @@ afterEach(() => {
   close = null;
 });
 
-function makeHive(opts: { mode?: "dry" | "demo" | "live"; responses?: Parameters<typeof mockFetch>[0]; dir?: string; db?: Db; hash?: string | null; portrait?: (slot: string) => string | null } = {}) {
+function makeHive(opts: { mode?: "dry" | "demo" | "live"; responses?: Parameters<typeof mockFetch>[0]; dir?: string; db?: Db; hash?: string | null; portrait?: (slot: string) => string | null; venueSupported?: boolean } = {}) {
   const dir = opts.dir ?? mkdtempSync(join(tmpdir(), "bees-hive-"));
   const db = opts.db ?? new Db(":memory:");
   const m = mockFetch(opts.responses ?? []);
   const path = join(dir, "hive.json");
-  const hive = new Hive({ path, url: "https://hive.test", mode: opts.mode ?? "dry", source: () => INPUT, db, fetch: m.f, portrait: opts.portrait, ownerPasswordHash: () => (opts.hash === undefined ? HASH : opts.hash) });
+  const hive = new Hive({ path, url: "https://hive.test", mode: opts.mode ?? "dry", source: () => INPUT, db, fetch: m.f, portrait: opts.portrait, venueSupported: opts.venueSupported, ownerPasswordHash: () => (opts.hash === undefined ? HASH : opts.hash) });
   hives.push(hive);
   return { hive, path, dir, db, calls: m.calls };
 }
@@ -155,6 +155,28 @@ describe("hive report", () => {
     expect(t.hive.status()).toMatchObject({ joined: false, paper: false });
   });
 
+  it("refuses global (USDT swap) bees: no join, no report, no request, and says why", async () => {
+    const t = makeHive({ venueSupported: false });
+    expect(() => t.hive.join()).toThrow("The Hive runs on OKX EEA paper trading only.");
+    expect(await t.hive.report()).toBeNull();
+    expect(t.calls).toHaveLength(0);
+    expect(t.hive.status()).toMatchObject({ joined: false, paper: false, blocked: "The Hive runs on OKX EEA paper trading only." });
+  });
+
+  it("a hive.json saved on EEA does not report after switching to global", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "bees-hive-"));
+    makeHive({ dir }).hive.join();
+    const t = makeHive({ dir, venueSupported: false });
+    expect(t.hive.joined).toBe(true);
+    t.hive.start();
+    expect(await t.hive.report()).toBeNull();
+    expect(t.calls).toHaveLength(0);
+  });
+
+  it("EEA paper status has no block reason", () => {
+    expect(makeHive().hive.status().blocked).toBeNull();
+  });
+
   it("will not report from live even with a hive.json left over from paper trading", async () => {
     const dir = mkdtempSync(join(tmpdir(), "bees-hive-"));
     makeHive({ dir }).hive.join();
@@ -221,8 +243,8 @@ describe("hive state file", () => {
 });
 
 describe("owner password gate", () => {
-  async function boot(mode: "dry" | "live" = "dry", hash?: string | null) {
-    const t = makeHive({ mode, hash, responses: [{ status: 200, body: { ok: true } }] });
+  async function boot(mode: "dry" | "live" = "dry", hash?: string | null, venueSupported?: boolean) {
+    const t = makeHive({ mode, hash, venueSupported, responses: [{ status: 200, body: { ok: true } }] });
     const server = startServer({ hive: t.hive, profile: () => ({ setup: false }), beeImage: () => null }, 0, "127.0.0.1");
     await new Promise((r) => server.once("listening", r));
     close = () => server.close();
@@ -275,6 +297,13 @@ describe("owner password gate", () => {
     const t = await boot("live");
     expect((await t.post("/hive/join")).status).toBe(409);
     expect(existsSync(t.path)).toBe(false);
+  });
+
+  it("POST /hive/join on global answers 409 with the reason", async () => {
+    const t = await boot("dry", undefined, false);
+    const r = await t.post("/hive/join");
+    expect(r.status).toBe(409);
+    expect((await r.json()) as { error: string }).toEqual({ error: "The Hive runs on OKX EEA paper trading only." });
   });
 
   it("does not expose /hive/report, and join/leave need POST", async () => {

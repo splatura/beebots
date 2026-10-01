@@ -10,6 +10,7 @@ import { SimExecutor } from "../src/exec/executor.js";
 import { Jev, type SystemOne } from "../src/jev.js";
 import { MarketFeed } from "../src/market/data.js";
 import { createPublicApi } from "../src/okx/public.js";
+import { createOkxPublicRest } from "../src/okx/rest.js";
 import { startServer } from "../src/server.js";
 import { Visitors } from "../src/visitors.js";
 
@@ -25,10 +26,10 @@ const fakeJev: SystemOne = {
   },
 };
 
-const cfg = loadConfig({ TYPESAFE_API_KEY: "fake", DRY_RUN: "true", TICK_MS: "2000", DB_PATH: process.env.E2E_DB ?? "./data/e2e-fake-jev.sqlite", ENGINE_PORT: "18080", LOG_LEVEL: "warn" });
+const cfg = loadConfig({ TYPESAFE_API_KEY: "fake", DRY_RUN: "true", OKX_SITE: process.env.OKX_SITE ?? "eea", TICK_MS: "2000", DB_PATH: process.env.E2E_DB ?? "./data/e2e-fake-jev.sqlite", ENGINE_PORT: "18080", LOG_LEVEL: "warn" });
 const db = new Db(cfg.dbPath);
 const bus = new EventBus(db);
-const feed = new MarketFeed(createPublicApi(cfg.okx.apiBase), { min24hVolUsd: cfg.universe.min24hVolUsd, allowNonCrypto: false, spreadGateBps: 15, trendCoins: [...BREEZY_COINS] }, null, () => BEES.map((b) => engine.bees[b]?.position?.instId).filter((x): x is string => !!x));
+const feed = new MarketFeed(createPublicApi(cfg.okx.apiBase, false, createOkxPublicRest({ apiBase: cfg.okx.apiBase, timeoutMs: 15_000, site: cfg.okx.site }), cfg.okx.venue), { min24hVolUsd: cfg.universe.min24hVolUsd, allowNonCrypto: false, spreadGateBps: 15, trendCoins: [...BREEZY_COINS], venue: cfg.okx.venue, universeMax: cfg.universe.max }, null, () => BEES.map((b) => engine.bees[b]?.position?.instId).filter((x): x is string => !!x));
 const exec = new SimExecutor(() => feed.view(), cfg.risk.takerFeeRate);
 const jev = new Jev({ ...cfg.jev, client: fakeJev });
 const engine: Engine = new Engine({ cfg, db, feed, jev, exec, bus, alerts: new Alerts(undefined) });

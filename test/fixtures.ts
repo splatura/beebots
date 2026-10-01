@@ -31,6 +31,7 @@ export function coin(coinName: string, over: Partial<CoinStats> = {}, px = 100):
     volZ: 0,
     fundingPct: 0.01,
     fundingZ: 0,
+    fundingAt: null,
     oiUsd: 1e6,
     oiChg1hPct: 0,
     newsZ: null,

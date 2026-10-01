@@ -18,7 +18,8 @@ import { log } from "./log.js";
 import { BIZZY_BREAKOUT_COINS } from "./bees/bizzy.js";
 import { BREEZY_COINS } from "./bees/breezy.js";
 import { deriveStyle } from "./bees/custom.js";
-import { fetchXperpCoins } from "./okx/public.js";
+import { fetchCoins } from "./okx/public.js";
+import type { Venue } from "./okx/venue.js";
 import { checkOpenAiKey, designBee, OpenAiError, paintBee, type BeeDesign } from "./openai.js";
 import { safeError } from "./redact.js";
 import { clientAddr } from "./visitors.js";
@@ -39,8 +40,10 @@ export interface SetupOpts {
   refDir: string;
   /** Called after a successful save (the engine exits so Docker restarts it). */
   onSaved: () => void;
-  /** OKX EEA public REST base, for the live coin list. */
+  /** OKX public REST base for the venue's live coin list. */
   okxApiBase: string;
+  /** Where the bees trade (OKX_SITE). */
+  venue: Venue;
   /** Minutes after the engine starts that Setup stays open (SETUP_WINDOW_MIN). */
   windowMin: number;
   now?: () => number;
@@ -74,7 +77,7 @@ export function finishDesign(raw: BeeDesign, known: string[]): BeeDesign {
   const asked = [...new Set(raw.coins.map((c) => c.trim().toUpperCase().replace(/-.*$/, "")).filter(Boolean))];
   const coins = asked.filter((c) => set.has(c)).slice(0, 20);
   if (asked.length && !coins.length) {
-    throw new DesignError(`${asked.slice(0, 5).join(", ")} ${asked.length > 1 ? "aren't" : "isn't"} tradable on OKX EEA right now. Try describing your bee again with a coin like BTC, ETH, SOL or DOGE.`);
+    throw new DesignError(`${asked.slice(0, 5).join(", ")} ${asked.length > 1 ? "aren't" : "isn't"} tradable on OKX right now. Try describing your bee again with a coin like BTC, ETH, SOL or DOGE.`);
   }
   const rules = raw.rules.replace(/\s+/g, " ").trim().slice(0, 500);
   if (rules.length < 10) throw new DesignError("The designer didn't write any rules. Press Create again.");
@@ -144,12 +147,12 @@ export class Setup {
     this.now = o.now ?? Date.now;
     this.openedAt = this.now();
     this.checkJev = o.checkJev ?? checkJevKey;
-    this.listCoins = o.listCoins ?? (() => fetchXperpCoins(o.okxApiBase));
+    this.listCoins = o.listCoins ?? (() => fetchCoins(o.venue, o.okxApiBase));
     this.design = o.design ?? designBee;
     this.paint = o.paint ?? paintBee;
   }
 
-  /** OKX's live crypto X-Perp coins, cached for a few minutes. */
+  /** The venue's live crypto coins, cached for a few minutes. */
   private async coinList(): Promise<string[]> {
     if (this.coins && Date.now() - this.coins.at < COINS_TTL_MS) return this.coins.list;
     const list = await this.listCoins();

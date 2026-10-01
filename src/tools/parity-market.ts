@@ -38,8 +38,8 @@ const [oldInst, newInst] = await Promise.all([
 ]);
 if (isDeepStrictEqual(oldInst, newInst)) console.log(`ok   instruments FUTURES: ${newInst.length} rows identical (raw JSON), parsed X-Perps ${newInst.filter((r) => r.instId?.includes(XPERP)).length}`);
 else fail("instruments", `old ${oldInst.length} rows vs new ${newInst.length}`);
-const parsedOld = oldInst.filter((r) => r.instId?.includes(XPERP)).map(parseInstrument);
-const parsedNew = newInst.filter((r) => r.instId?.includes(XPERP)).map(parseInstrument);
+const parsedOld = oldInst.filter((r) => r.instId?.includes(XPERP)).map((r) => parseInstrument(r));
+const parsedNew = newInst.filter((r) => r.instId?.includes(XPERP)).map((r) => parseInstrument(r));
 if (!isDeepStrictEqual(parsedOld, parsedNew)) fail("instruments parsed", "differ");
 
 // ---- tickers / open interest: live values move between two calls, so compare shape exactly and values where OKX's ts matches ----

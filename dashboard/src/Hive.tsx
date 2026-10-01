@@ -76,8 +76,8 @@ function HiveDialog({ status, onClose, onStatus }: { status: HiveStatus; onClose
           </div>
         )}
 
-        {!status.paper && !status.joined ? (
-          <p className="bad">The Hive is for paper trading only. This engine runs with real money, so it can't join.</p>
+        {status.blocked || (!status.paper && !status.joined) ? (
+          <p className="bad">{status.blocked ?? "The Hive is for paper trading only. This engine runs with real money, so it can't join."}</p>
         ) : !status.passwordSet ? (
           <p className="bad">
             This server has no owner password yet. Run Setup again to pick one (see the README), or set <code>OWNER_PASSWORD</code> and restart the

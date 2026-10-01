@@ -153,16 +153,18 @@ export interface Profile {
   setup: boolean;
   mode: "dry" | "demo" | "live";
   links: { sponsor: string; code: string } | null;
+  venue?: { label: string; funding: "fixed-slots" | "per-instrument" } | null;
   /** img null: a Setup-made bee without its portrait (the dashboard shows the placeholder mark). */
   bees: Array<{ id: BeeName; name: string; tagline: string; style: string; styleLabel: string; rules?: string; coins?: string[]; img: string | null }>;
 }
 
-export const PROFILE: { links: Profile["links"] } = { links: null };
+export const PROFILE: { links: Profile["links"]; venue: NonNullable<Profile["venue"]> | null } = { links: null, venue: null };
 
 const OFFICIAL_NAMES = ["Bizzy", "Breezy", "Boozy"];
 
 export function applyProfile(p: Profile): void {
   PROFILE.links = p.links;
+  PROFILE.venue = p.venue ?? null;
   for (const b of p.bees) {
     const m = BEE_META[b.id];
     if (!m) continue;
@@ -185,6 +187,8 @@ export interface HiveStatus {
   joined: boolean;
   /** false in MODE=live: the Hive is paper only. */
   paper: boolean;
+  /** Why this engine can't join (live mode, or a venue the board doesn't cover), or null. */
+  blocked?: string | null;
   /** The leaderboard's base URL (HIVE_URL). */
   board: string;
   lastReportAt: number | null;

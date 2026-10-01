@@ -1,5 +1,6 @@
 import { log } from "../log.js";
 import type { PublicApi } from "../okx/public.js";
+import { VENUES, type Venue } from "../okx/venue.js";
 import { safeError } from "../redact.js";
 import { atr, bollinger, macd, pctChange, rsi, trendStats, zScore } from "./indicators.js";
 import type { Candle, CoinStats, Instrument, MarketView, Ticker } from "./types.js";
@@ -22,6 +23,10 @@ export interface FeedOpts {
   spreadGateBps: number;
   /** Coins that always get stats + 4h trend data (breezy's majors). */
   trendCoins: string[];
+  /** Where the instruments come from (default: EEA X-Perps). */
+  venue?: Venue;
+  /** UNIVERSE_MAX (default: no cap). */
+  universeMax?: number;
 }
 
 const HOUR = 3_600_000;
@@ -57,6 +62,7 @@ export function computeStats(inst: Instrument, t: Ticker, c15: Candle[], c1h: Ca
     volZ: volLatest !== undefined ? zScore(volLatest, volHist) : null,
     fundingPct: null,
     fundingZ: null,
+    fundingAt: null,
     oiUsd: null,
     oiChg1hPct: null,
     newsZ: null,
@@ -129,6 +135,8 @@ export class MarketFeed {
       min24hVolUsd: this.opts.min24hVolUsd,
       spreadGateBps: this.opts.spreadGateBps,
       allowNonCrypto: this.opts.allowNonCrypto,
+      matches: (this.opts.venue ?? VENUES.eea).matches,
+      max: this.opts.universeMax ?? Infinity,
     });
     this.gated = u.tradable;
     this.spreadBlocked = u.spreadBlocked;
@@ -160,6 +168,7 @@ export class MarketFeed {
           if (funding && Number.isFinite(funding.rate)) {
             s.fundingPct = funding.rate * 100;
             s.fundingZ = fHist.length ? zScore(funding.rate, fHist) : null;
+            s.fundingAt = Number.isFinite(funding.fundingAt) ? funding.fundingAt : null;
           }
           s.oiUsd = oi.get(id) ?? null;
           s.oiChg1hPct = this.oiChange1h(id, now);

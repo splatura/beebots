@@ -42,6 +42,8 @@ services:
       UPDATE_CHECK: ${UPDATE_CHECK:-true}
       # The Hive, the public paper-trading leaderboard. Only used if you join (Setup or the dashboard).
       HIVE_URL: ${HIVE_URL:-https://beebots.tech}
+      OKX_SITE: ${OKX_SITE:-eea}
+      UNIVERSE_MAX: ${UNIVERSE_MAX:-}
       # Per-bee OKX keys, for demo or live only (letters: BEE1, BEE2, BEE3).
       BEE1_OKX_DEMO_API_KEY: ${BEE1_OKX_DEMO_API_KEY:-}
       BEE1_OKX_DEMO_API_SECRET: ${BEE1_OKX_DEMO_API_SECRET:-}

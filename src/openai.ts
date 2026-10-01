@@ -42,8 +42,8 @@ export interface BeeDesign {
 }
 
 /**
- * One short call: turn "how do you want this bee to trade?" into a bee. `coins` is the current OKX EEA crypto X-Perp
- * list; the model may only restrict the bee to coins on it.
+ * One short call: turn "how do you want this bee to trade?" into a bee. `coins` is the current OKX crypto list for this
+ * install's venue; the model may only restrict the bee to coins on it.
  */
 export async function designBee(apiKey: string, model: string, description: string, coins: string[], timeoutMs = 30_000): Promise<BeeDesign> {
   const styles = STYLES.map((s) => `- ${s} (${STYLE_INFO[s].label}): ${STYLE_INFO[s].blurb}`).join("\n");
@@ -70,7 +70,7 @@ export async function designBee(apiKey: string, model: string, description: stri
             "- look: one or two sentences on what the bee looks like (props, outfit, mood) for its portrait. No real people's faces, no logos, no text.\n" +
             "Never give financial advice.\n\nBuilt-in engines:\n" +
             styles +
-            "\n\nCoins on OKX EEA right now: " +
+            "\n\nCoins on OKX right now: " +
             coins.join(" "),
         },
         { role: "user", content: description.slice(0, 400) },
