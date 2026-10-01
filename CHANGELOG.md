@@ -57,4 +57,10 @@ On global, only paper trading (`MODE=dry`) is supported for now. Demo and live a
 - `.gitignore` also ignores local working folders: `CLAUDE.md`, `docs/superpowers/`, `.superpowers/` and
   `.remember/`.
 
+### Fixed
+
+- Building the images from a Windows checkout no longer fails with `set: Illegal option -`. Git on Windows
+  (`core.autocrlf=true`) checked out `scripts/okx-profiles.sh` and the `deploy/` Dockerfiles with CRLF line endings,
+  which `sh` rejects inside the container. A new `.gitattributes` keeps every file LF on checkout.
+
 [Unreleased]: https://github.com/splatura/beebots/compare/5ddd6d1...HEAD

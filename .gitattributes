@@ -1,0 +1,2 @@
+# Everything here runs in Linux containers; keep LF even on Windows checkouts (core.autocrlf=true breaks sh scripts).
+* text=auto eol=lf
