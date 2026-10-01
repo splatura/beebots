@@ -236,6 +236,10 @@ export class Engine {
     }
     // Trailing stop: only ever ratchets in the position's favour.
     const brain = this.brain(id);
+    if (p && brain.trackPeak && t && Number.isFinite(t.mid) && t.mid > 0) {
+      const better = p.peakPx == null || (p.side === "long" ? t.mid > p.peakPx : t.mid < p.peakPx);
+      if (better) p.peakPx = t.mid;
+    }
     if (p && brain.trail) {
       const cand = brain.trail(this.ctx(id, now));
       if (cand !== null && Number.isFinite(cand)) ratchetStop(p, cand);
@@ -253,11 +257,18 @@ export class Engine {
     const { cfg, db, bus, jev } = this.d;
     const brain = this.brain(id);
     const bee = this.bees[id];
+    const ctx = this.ctx(id, now);
+    const epoch = brain.decisionEpoch?.(ctx);
+    const hourlyWaiting = !!brain.decisionEpoch && (epoch == null || epoch <= (bee.hourlyDecisionAt ?? 0));
+    if (epoch != null && !hourlyWaiting) {
+      bee.hourlyDecisionAt = epoch;
+      // Consume before the asynchronous model call, including WAIT/errors and benched/positioned hours.
+      db.saveBee(bee, now);
+    }
     // Benched (trade cap or fee budget): the bee rides whatever it holds. Jev is not asked, because nothing it
     // chose could be acted on; only code can close the position (stop, time stop, loss stop) until 00:00 UTC.
     if (bee.cap === "trade_cap" || bee.cap === "fee_budget") return this.decideBenched(id, now);
-    const ctx = this.ctx(id, now);
-    const menu = brain.menu(ctx);
+    const menu = hourlyWaiting ? { WAIT: { desc: "hour already consumed or completed data not ready", intent: { kind: "hold" as const } } } : brain.menu(ctx);
     const snap = buildSnapshot(brain, ctx);
     if (brain.id === "boozy" && bee.top1.coin) snap.state.top1 = `${bee.top1.coin} x${bee.top1.streak}`;
 
@@ -278,7 +289,7 @@ export class Engine {
       r && r.ok ? { label: r.choice, intent: menu[r.choice]!.intent, prob: r.probabilities[r.choice] ?? 0, conviction: r.conviction } : null;
 
     const risk = applyRisk({
-      ctx,
+      ctx: brain.validateOpen ? this.ctx(id, this.now()) : ctx,
       brain,
       proposal,
       jev: jevStatus,
@@ -544,7 +555,8 @@ export class Engine {
     const inst = view.instruments.get(instId);
     const s = view.stats.get(instId);
     if (!inst || !s) return;
-    const contracts = contractsFor(notionalUsd, inst, s.mid);
+    const px = this.brain(id).executionPrice?.(side, s) ?? s.mid;
+    const contracts = contractsFor(notionalUsd, inst, px);
     if (contracts <= 0) {
       log.info("order rounds to zero contracts, skipped", { bee: id, coin: inst.coin, notionalUsd });
       return;

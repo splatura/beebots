@@ -1,69 +1,61 @@
-# Bizzy Bee: the grinder
+# Bizzy Bee: selective hourly trend breakout
 
-> **Live rules since 2026-09-24:** one Larry Williams volatility breakout a day. When BTC, ETH, SOL or HYPE trades above today's UTC open + 0.5 x yesterday's range, Jev may take it long at full size (2x). She rides it to the UTC day close. Her stop is back below today's open, and she can cut it while it's losing. 1 trade a day, fee budget $1.00. She is never forced in. The fade strategy below is her previous design, kept for reference.
+> **Unvalidated strategy hypothesis.** This is not a profitability claim or a statement about any deployment's status.
+> Bizzy trades liquid OKX perps long or short from completed hourly candles. Every Bizzy-style bee shares these rules
+> and settings; changing a style affects every bee assigned to it.
 
-> Tiny round glasses, gaming headset, sweatband, coffee cup, speed lines. Never stops, does everything fast.
+## Universe and setup
 
-**Style:** indicator mean reversion with a funding filter. Many small trades, takes profit early, and cuts losers fast. The drama is her *hustle*, and the fee meter she has to outrun.
+- Start from the top 30 dynamically gated crypto perps that pass the existing liquidity and spread gates. No fixed
+  BTC/ETH/SOL/HYPE allowlist. For each completed hour, unavailable coins without a ready current-hour bar are excluded
+  from that hour's comparison rather than stalling the remaining pool.
+- Apply the long/short 7-day return percentiles to the ready subset of that pool: top 20% for longs and bottom 20% for
+  shorts. Require the close above the **prior 72 hourly closes** for a long, or below all of them for a short, plus
+  EMA(24) > EMA(72) for longs / EMA(24) < EMA(72) for shorts.
+- Rank valid entry candidates by descending `abs(7d return) / hourly realized volatility`; use 24-hour volume as the
+  tie-breaker.
+- When valid entries exist, Jev chooses among them or `WAIT`; Bizzy does not force an entry just because it is flat.
+- Reject an entry if the current price has chased more than 0.5 hourly ATR from the signal close. Bars are sourced
+  from the existing market requests (100 15-minute and 200 hourly); the strategy adds no requests.
 
-**Universe:** the top ~8 liquid crypto X-Perps by 24h volume with spread ≤ 5 bp. On 2026-09-24 that was BTC, ETH, XRP, SOL, SUI, HYPE, DOGE and LINK (re-rank every hour). Mean reversion with market orders only works where the spread is tiny.
+## Sizing and management
 
-## Strategy Z1 (primary): Bollinger + RSI fade
+- Initial stop: 2 × hourly ATR from the actual fill. Plan all-in risk at 2% of current equity, sizing notional as
+  `min($700, 2 × equity, risk budget / (stop fraction + fees + spread + slippage + payable funding))`.
+  The existing 0.97 margin-headroom factor makes the operational notional ceiling 1.94 × current equity. A gap or
+  slippage can still make realized loss exceed the budget; it is not a guarantee.
+- Reserve fees, spread and slippage (documented allowance `BIZZY_SLIPPAGE_BPS=5`) plus payable funding over the
+  documented 24-hour cost horizon (`BIZZY_FUNDING_HORIZON_HOURS=24`); this horizon is a cost reserve, not a maximum
+  holding period.
+- Begin trailing after price advances one initial stop distance in Bizzy's favor; trail at 3 × hourly ATR and ratchet
+  only in the position's favor.
+- Close when two consecutive completed hourly closes are below EMA(24) for a long or above EMA(24) for a short.
+  This deterministic exit remains active if Jev is unavailable or the bee is benched.
+- No fixed take-profit, averaging down, adds, or rank rotation. No forced flat entry, UTC-midnight exit, or holding-time
+  limit. A position can continue across UTC midnight.
 
-**Source:** Freqtrade community strategy `BbandRsi`:
-https://raw.githubusercontent.com/freqtrade/freqtrade-strategies/main/user_data/strategies/berlinguyinca/BbandRsi.py
-(repo: https://github.com/freqtrade/freqtrade-strategies, published "for educational purposes only"; no out-of-sample record).
+## Safety and operational transition
 
-**Published rules (1h, long only):** RSI(14) < 30 **and** close < lower Bollinger band (20, 2σ on typical price) → buy. Exit on RSI > 70 or +10% take-profit, with a -25% stop.
+Global safety remains unchanged: maximum leverage 2x, the existing 8% daily loss stop, and retirement below 40% of
+starting equity. Bizzy-specific trade and fee caps are controlled by its own environment settings.
 
-**Our adaptation (inference):**
-- **15-minute bars** for activity.
-- **Mirrored short:** RSI > 70 **and** close > upper band.
-- **Exit at the middle band.** That is her "takes profit early" personality.
-- **Stop at 1.5 × ATR(14).** The published -25% stop is meaningless at 2x.
-- Time stop: close any trade older than 4 hours.
-
-## Strategy Z2 (filter): funding rate as a veto, not a trigger
-
-- tradingstrategies.work BTC funding backtest (Sep 2019 to Jun 2026, 2,462 days). Buying on negative funding (z < -1.5) was "essentially unviable" after fees. But **blocking longs when funding z > 1.5** lifted average return from +4.23% to +6.95% and win rate to 62.3%. https://tradingstrategies.work/blog/funding-rate-signal-btc-backtest
-- BIS Working Paper 1087: "a high crypto carry predicts future price crashes." https://www.bis.org/publ/work1087.htm
-- Inan: funding is partly predictable out of sample, but unstably (SSRN abstract only). https://papers.ssrn.com/sol3/papers.cfm?abstract_id=5576424
-
-**Rule:** block longs when the coin's 30-day funding z > 1.5. Prefer the short side of an upper-band signal when z > 2. Never buy on negative funding alone.
-
-## Jev menu
-
-```
-action: choice
-  FADE_LONG_<coin>    x top 8   (lower band + RSI<30 setups)
-  FADE_SHORT_<coin>   x top 8   (upper band + RSI>70 setups)
-  TAKE_PROFIT        close at/near the middle band
-  CUT_LOSS           close now
-  ROTATE             close and take the best other setup
-  HOLD               (valid ONLY while a position is open; see forcing)
-conviction: score ["meh","decent","juicy","screaming"]
-```
-
-Only show Jev menu options that currently have a valid setup, plus the position-management options. Jev picks among real choices, never impossible ones.
-
-**State per coin:** RSI(14), %B, band width, ATR%, 1h return, funding + funding z, 1h OI change, spread bp. **State per bee:** position, P&L in R, minutes held, trades today, fees today, fee budget left.
-
-## Risk and forcing (code)
-
-- **Trade cap: 6 round trips a day** (`BIZZY_MAX_TRADES_PER_DAY`) **and a fee budget of $1.50/day** (`BIZZY_FEE_BUDGET_USD_DAY`); whichever trips first benches her until 00:00 UTC. At full 2x size each taker round trip costs ~$0.67 plus spread (see `docs/COSTS.md`); uncapped she bleeds out on fees alone. The dashboard shows the cap meter; hitting it is itself a story beat.
-- **Size per trade:** 0.4 × max notional by default (≈$265 on a $333 bee). Small and frequent is her style, and it keeps the fee maths survivable.
-- **Never flat for more than 20 minutes:** force a fade entry on the coin with the most extreme %B among the universe, even if the signal is only "meh".
-- Funding veto as above. Spread gate 5 bp.
-- Expect **4-6 round trips a day**, all capped.
+This is a code/strategy change, not a deployment instruction. On an existing deployment, changing the engine does not
+reset its ledger. Any existing Bizzy position remains in place and is managed by the new available stop ratcheting and
+exit rules; do not assume it is closed or reset during the transition.
 
 ## Honest expectation
 
-Mean reversion in BTC has **weakened since 2022**. Quantpedia: "buying at the minimum has not performed well" Feb 2022 to Aug 2024. Wen et al. find intraday momentum *and* reversal in BTC/ETH/LTC/XRP (ScienceDirect abstract: https://www.sciencedirect.com/science/article/abs/pii/S1062940822000833). Her main enemies are the "band walk" (fading a real breakout) and fees. She may well have the highest win rate and still finish third. That is a great twist.
+Hourly breakouts with trend and cross-sectional filters are a hypothesis, not a validated edge. They can suffer
+whipsaws, gaps, fees, spread, slippage and funding; actual losses can exceed planned risk. Paper-trade and evaluate
+before drawing conclusions.
 
-## Drama hooks
+## Jev menu
 
-- "Bizzy just banked +0.4% for the seventh time today."
-- "Funding's flashing red: she refuses to go long."
-- "She faded the breakout and is two ATR underwater. Cut or pray?"
-- "Trade 6 of 6. She's benched until midnight."
-- Her fee meter vs her P&L: "is she working for herself or for OKX?"
+Jev receives a choice request only when one or more valid breakout entries exist. When there is no valid entry, the
+menu is empty and the engine skips Jev; it does not ask Jev to choose `WAIT`. While a position is open, only valid
+position-management options are offered. Risk limits and deterministic exits remain code-enforced.
+
+## Operational cadence
+
+Evaluate only new completed hourly candles. Existing market refreshes provide the bars; Bizzy adds no market-data
+requests.

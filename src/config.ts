@@ -97,13 +97,16 @@ const EnvSchema = z.object({
 
   BREEZY_MIN_OPEN_PROB: num(0.7),
   BREEZY_MIN_SIZE_USD: num(10),
-  BIZZY_SIZE_FRACTION: num(0.4),
-  BIZZY_UNIVERSE_SIZE: num(8),
-  BIZZY_TIME_STOP_MINUTES: num(240),
+  // Bizzy approach 1: fixed 2% all-in risk; these allowances model expense, not a guaranteed loss ceiling.
+  BIZZY_SLIPPAGE_BPS: num(5),
+  BIZZY_FUNDING_HORIZON_HOURS: num(24),
   BOOZY_CANDIDATES: num(5),
   // Defaults = the "wider swings" rules in strategies/*.md (what the original bees ran from 2026-09-24).
   ...perStyle("BREEZY", { trades: 3, fee: 1.0, spread: 5, cooldown: 240, stopAtr: 2, maxFlat: 0 }),
-  ...perStyle("BIZZY", { trades: 1, fee: 1.0, spread: 5, cooldown: 5, stopAtr: 1.5, maxFlat: 20 }),
+  BIZZY_MAX_TRADES_PER_DAY: num(3),
+  BIZZY_FEE_BUDGET_USD_DAY: num(3),
+  BIZZY_SPREAD_GATE_BPS: num(5),
+  BIZZY_COOLDOWN_MINUTES: num(0),
   ...perStyle("BOOZY", { trades: 3, fee: 3.0, spread: 15, cooldown: 2, stopAtr: 2, maxFlat: 0 }),
   ...perSlot("BEE1"),
   ...perSlot("BEE2"),
@@ -190,7 +193,7 @@ export interface Config {
   /** Knobs per trading style. */
   bees: Record<StyleId, BeeKnobs>;
   breezy: { minOpenProb: number; minSizeUsd: number };
-  bizzy: { sizeFraction: number; universeSize: number; timeStopMinutes: number };
+  bizzy: { slippageBps: number; fundingHorizonHours: number };
   boozy: { candidates: number };
   /** Per-bee OKX credentials for the current mode. Never logged, never sent to the dashboard. */
   creds: Partial<Record<BeeId, OkxCreds>>;
@@ -221,6 +224,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, settings: Setti
 
   if (e.MAX_LEVERAGE > 2 || e.MAX_LEVERAGE <= 0) throw new ConfigError("MAX_LEVERAGE must be in (0, 2]. Hard rule 3.");
   if (e.MAX_FLAT_MINUTES < 0) throw new ConfigError("MAX_FLAT_MINUTES must be >= 0");
+  if (e.BIZZY_SLIPPAGE_BPS < 0) throw new ConfigError("BIZZY_SLIPPAGE_BPS must be >= 0");
+  if (e.BIZZY_FUNDING_HORIZON_HOURS < 0) throw new ConfigError("BIZZY_FUNDING_HORIZON_HOURS must be >= 0");
 
   const venue = VENUES[e.OKX_SITE];
   if (venue.site === "global" && mode !== "dry") throw new ConfigError("OKX_SITE=global supports MODE=dry for now; demo and live come next.");
@@ -272,8 +277,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, settings: Setti
       feeBudgetUsdDay: n("FEE_BUDGET_USD_DAY"),
       spreadGateBps: n("SPREAD_GATE_BPS"),
       cooldownMinutes: n("COOLDOWN_MINUTES"),
-      stopAtrMult: n("STOP_ATR_MULT"),
-      maxFlatMinutes: Math.min(n("MAX_FLAT_MINUTES"), e.MAX_FLAT_MINUTES),
+      stopAtrMult: style === "bizzy" ? 2 : n("STOP_ATR_MULT"),
+      maxFlatMinutes: style === "bizzy" ? 0 : Math.min(n("MAX_FLAT_MINUTES"), e.MAX_FLAT_MINUTES),
     };
   };
 
@@ -309,7 +314,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, settings: Setti
     universe: { min24hVolUsd: e.MIN_24H_VOL_USD, allowNonCrypto: e.ALLOW_NON_CRYPTO, max: universeMax },
     bees: { bizzy: knobs("bizzy"), breezy: knobs("breezy"), boozy: knobs("boozy") },
     breezy: { minOpenProb: e.BREEZY_MIN_OPEN_PROB, minSizeUsd: e.BREEZY_MIN_SIZE_USD },
-    bizzy: { sizeFraction: e.BIZZY_SIZE_FRACTION, universeSize: e.BIZZY_UNIVERSE_SIZE, timeStopMinutes: e.BIZZY_TIME_STOP_MINUTES },
+    bizzy: { slippageBps: e.BIZZY_SLIPPAGE_BPS, fundingHorizonHours: e.BIZZY_FUNDING_HORIZON_HOURS },
     boozy: { candidates: e.BOOZY_CANDIDATES },
     creds,
     server: { port: e.ENGINE_PORT, bind: e.ENGINE_BIND },

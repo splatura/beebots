@@ -38,6 +38,9 @@ export interface FundingNow {
   rate: number;
   /** When the current funding period settles (OKX's `fundingTime`), ms. */
   fundingAt: number;
+  /** Next settlement, used only to infer the instrument's current interval. */
+  nextFundingAt?: number;
+  intervalMs?: number;
 }
 
 /** Everything the snapshot builder and risk layer may know about one coin. Numbers only. */
@@ -67,6 +70,8 @@ export interface CoinStats {
   fundingZ: number | null;
   /** When the coin's current funding period settles (ms), null when unknown. */
   fundingAt: number | null;
+  /** Current settlement interval, used by hourly breakout cost sizing only. */
+  fundingIntervalMs?: number | null;
   oiUsd: number | null;
   oiChg1hPct: number | null;
   // news (kit news module; null when unavailable)
@@ -74,8 +79,26 @@ export interface CoinStats {
   sentiment: number | null;
   // 4h trend (breezy's coins only)
   trend?: TrendStats;
-  /** Larry Williams volatility breakout (bizzy): today's UTC open + k x yesterday's range, from 1h bars. */
-  breakout?: { dayOpen: number; prevRange: number; trigger: number } | null;
+  /** Confirmed hourly inputs for Bizzy; legacy indicators above deliberately retain their semantics. */
+  hourlyTrend?: HourlyTrendStats | null;
+}
+
+export interface HourlyTrendStats {
+  /** End of the latest confirmed candle (its opening timestamp plus one hour). */
+  closedAt: number;
+  close: number;
+  /** Highest/lowest of the PRIOR 72 closes, excluding the signal candle. */
+  channelHigh: number;
+  channelLow: number;
+  ema24: number;
+  ema72: number;
+  /** Previous and latest completed close compared with their own EMA24. */
+  belowEma24: readonly [boolean, boolean];
+  aboveEma24: readonly [boolean, boolean];
+  atr14: number;
+  ret7dPct: number;
+  /** Standard deviation of the latest 168 hourly log returns, in percent (not annualised). */
+  volatilityPct: number;
 }
 
 export interface TrendStats {

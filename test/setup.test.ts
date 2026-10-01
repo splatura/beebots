@@ -180,14 +180,14 @@ describe("setup", () => {
     expect((await t.post("/setup/save", noKey)).status).toBe(400);
   });
 
-  it("re-checks coins and the brain on save: unknown coins dropped, style forced from the coins", async () => {
+  it("re-checks coins and preserves Bizzy for an owner-selected coin", async () => {
     const t = await boot();
     t.paintAll();
-    const bees = [{ ...BEES[0]!, style: "breezy", coins: ["BTC", "NOPE"] }, { ...BEES[1]!, style: "bizzy" }, BEES[2]];
+    const bees = [{ ...BEES[0]!, style: "bizzy", coins: ["BTC", "NOPE"] }, { ...BEES[1]!, style: "bizzy" }, BEES[2]];
     expect((await t.post("/setup/save", { ...SAVE, bees })).status).toBe(200);
     const s = loadSettings(t.settingsPath)!;
-    expect(s.bees[0]).toMatchObject({ coins: ["BTC"], style: "breezy" });
-    expect(s.bees[1]).toMatchObject({ coins: ["TRUMP"], style: "boozy" }); // Breakout can't trade TRUMP
+    expect(s.bees[0]).toMatchObject({ coins: ["BTC"], style: "bizzy" });
+    expect(s.bees[1]).toMatchObject({ coins: ["TRUMP"], style: "bizzy" });
   });
 
   it("refuses the official bees' names, typed by the owner", async () => {
@@ -225,7 +225,6 @@ describe("designing a bee", () => {
     const r = await t.post("/setup/design", { openaiKey: "sk-test", slot: 1, description: "a Trump bee that only ever trades TRUMP" });
     expect(r.status).toBe(200);
     expect(await r.json()).toMatchObject({ name: "Donny", coins: ["TRUMP"], baseStyle: "boozy", styleLabel: "Momentum" });
-    expect(t.asked[0]).toEqual({ description: "a Trump bee that only ever trades TRUMP", coins: COINS });
   });
 
   it("needs an OpenAI key and a description", async () => {
@@ -255,26 +254,17 @@ describe("finishDesign", () => {
     expect(finishDesign(design({ coins: ["trump", "NOPE", "TRUMP"] }), COINS).coins).toEqual(["TRUMP"]);
   });
 
-  it("[] means any coin, and runs on Momentum", () => {
-    expect(finishDesign(design({ coins: [], baseStyle: "breezy" }), COINS)).toMatchObject({ coins: [], baseStyle: "boozy" });
+  it("[] means any coin when Bizzy is requested", () => {
+    expect(finishDesign(design({ coins: [], baseStyle: "bizzy" }), COINS)).toMatchObject({ coins: [], baseStyle: "bizzy" });
   });
 
-  it("forces the brain to one that can trade the coins", () => {
-    expect(finishDesign(design({ coins: ["BTC"], baseStyle: "breezy" }), COINS).baseStyle).toBe("breezy");
-    expect(finishDesign(design({ coins: ["BTC", "ETH"], baseStyle: "breezy" }), COINS).baseStyle).toBe("breezy");
-    expect(finishDesign(design({ coins: ["BTC", "SOL"], baseStyle: "breezy" }), COINS).baseStyle).toBe("boozy");
+  it("preserves Bizzy for arbitrary and unrestricted coins without changing other styles", () => {
     expect(finishDesign(design({ coins: ["SOL", "HYPE"], baseStyle: "bizzy" }), COINS).baseStyle).toBe("bizzy");
-    expect(finishDesign(design({ coins: ["DOGE"], baseStyle: "bizzy" }), COINS).baseStyle).toBe("boozy");
+    expect(finishDesign(design({ coins: ["DOGE"], baseStyle: "bizzy" }), COINS).baseStyle).toBe("bizzy");
+    expect(finishDesign(design({ coins: [], baseStyle: "bizzy" }), COINS).baseStyle).toBe("bizzy");
+    expect(finishDesign(design({ coins: ["BTC"], baseStyle: "breezy" }), COINS).baseStyle).toBe("breezy");
+    expect(finishDesign(design({ coins: [], baseStyle: "breezy" }), COINS).baseStyle).toBe("boozy");
     expect(finishDesign(design({ coins: ["BTC"], baseStyle: "boozy" }), COINS).baseStyle).toBe("boozy");
-  });
-
-  it("says why when the brain is switched, and stays quiet when it isn't", () => {
-    expect(finishDesign(design({ coins: ["SOL", "DOGE"], baseStyle: "bizzy" }), COINS).styleNote).toBe(
-      "Breakout only trades BTC, ETH, SOL and HYPE, so with SOL and DOGE this bee runs on Momentum.",
-    );
-    expect(finishDesign(design({ coins: [], baseStyle: "breezy" }), COINS).styleNote).toBe("Trend only trades BTC and ETH, so on any coin this bee runs on Momentum.");
-    expect(finishDesign(design({ coins: ["BTC"], baseStyle: "breezy" }), COINS).styleNote).toBeUndefined();
-    expect(finishDesign(design({ coins: ["DOGE"], baseStyle: "boozy" }), COINS).styleNote).toBeUndefined();
   });
 
   it("cleans the name and tagline", () => {

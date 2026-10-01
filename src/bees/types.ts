@@ -46,6 +46,8 @@ export interface BeeState {
   totals: { feesUsd: number; fundingUsd: number; jevUsd: number; realisedUsd: number; decisions: number; orders: number };
   /** boozy: who was #1 on the previous hourly rank, and for how many ranks in a row. */
   top1: { coin: string | null; streak: number; rankedAt: number };
+  /** Last consumed hourly decision epoch; serialized with the bee for restart-safe entry cadence. */
+  hourlyDecisionAt?: number;
 }
 
 /** What a menu option means, in code. The risk layer turns this into a final action. */
@@ -103,6 +105,16 @@ export interface BeeBrain {
   stopFor(instId: string, side: Side, entryPx: number, ctx: BeeContext): number | null;
   /** Optional trailing stop candidate; the engine only ever ratchets the stop in the position's favour. */
   trail?(ctx: BeeContext): number | null;
+  /** Keep the favourable ticker peak before calling trail, even without a profit-lock ladder. */
+  trackPeak?: boolean;
+  /** Completed-candle decision epoch; null means the hourly inputs are not ready. */
+  decisionEpoch?(ctx: BeeContext): number | null;
+  /** A code-owned close, evaluated even when Jev is unavailable or the bee is benched. */
+  deterministicExit?(ctx: BeeContext): string | null;
+  /** Revalidate an entry after the asynchronous Jev call. null means eligible. */
+  validateOpen?(intent: Extract<Intent, { kind: "open" | "switch" }>, ctx: BeeContext): string | null;
+  /** Opt-in lot sizing at the executable side instead of mid. */
+  executionPrice?(side: Side, s: CoinStats): number;
   /**
    * Profit lock: once the price has moved `atPct`% in the position's favour (best price since entry, measured from
    * the average entry), the stop keeps at least `keep` of that best move. The highest rung reached applies. Ratchet only.

@@ -129,10 +129,19 @@ describe("in-process public market data", () => {
     expect(m3.calls[0]!.url).toBe("https://eea.okx.com/api/v5/public/open-interest?instType=SWAP");
   });
 
-  it("funding reports the settlement time as fundingAt", async () => {
-    const m = mockFetch([ok([{ instId: "BTC-USDT-SWAP", fundingRate: "0.0001", fundingTime: "1790841600000", nextFundingTime: "1790870400000" }])]);
+  it("uses each instrument's reported funding interval, not an assumed8hours", async () => {
+    const m = mockFetch([ok([{ instId: "BTC-USDT-SWAP", fundingRate: "0.0001", fundingTime: "1790841600000", nextFundingTime: "1790856000000" }])]);
     const f = await createPublicApi("https://www.okx.com", false, rest(m.fn).r, VENUES.global).funding("BTC-USDT-SWAP");
-    expect(f).toEqual({ rate: 0.0001, fundingAt: 1790841600000 });
+    expect(f.intervalMs).toBe(4 * 3_600_000);
+    expect(f.nextFundingAt! - f.fundingAt).toBe(f.intervalMs);
+  });
+  it("does not invent a funding interval from missing, malformed or non-increasing settlement times", async () => {
+    for (const nextFundingTime of ["", "bad", "1790841600000", "1790838000000"]) {
+      const m = mockFetch([ok([{ instId: "BTC-USDT-SWAP", fundingRate: "0.0001", fundingTime: "1790841600000", nextFundingTime }])]);
+      const f = await createPublicApi("https://www.okx.com", false, rest(m.fn).r, VENUES.global).funding("BTC-USDT-SWAP");
+      expect(f.intervalMs).toBeUndefined();
+      expect(f.nextFundingAt).toBeUndefined();
+    }
   });
 
   it("fetchCoins lists the venue's live crypto coins", async () => {

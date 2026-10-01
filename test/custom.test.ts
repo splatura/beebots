@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { customBrain, deriveStyle } from "../src/bees/custom.js";
 import { BRAINS } from "../src/bees/index.js";
-import { bee, coin, ctx, position, view } from "./fixtures.js";
+import { bee, coin, ctx, position, trend, view, NOW } from "./fixtures.js";
 
 // A market where TRUMP is the weakest mover, so an unrestricted Momentum bee would never pick it.
 const market = () =>
@@ -39,26 +39,56 @@ describe("owner-designed bees", () => {
     expect(trump.menu(ctx("boozy", bee("boozy"), noTrump))).toEqual({});
   });
 
-  it("tells Jev the owner's rules and the coin list", () => {
-    expect(trump.strategy).toContain(BRAINS.boozy.strategy);
-    expect(trump.strategy).toContain("Owner's rules for this bee");
-    expect(trump.strategy).toContain("Only trade TRUMP. Go long when it pumps.");
-    expect(trump.strategy).toContain("only ever trades TRUMP");
-    expect(trump.id).toBe("boozy");
+  it("keeps Bizzy's hourly decision and entry validation inside a custom bee's coin filter", () => {
+    const hour = Math.floor(NOW / 3_600_000) * 3_600_000;
+    const h = {
+      closedAt: hour,
+      close: 100,
+      channelHigh: 99,
+      channelLow: 98,
+      ema24: 2,
+      ema72: 1,
+      belowEma24: [false, false] as [boolean, boolean],
+      aboveEma24: [false, false] as [boolean, boolean],
+      atr14: 1,
+      ret7dPct: 5,
+      volatilityPct: 2,
+    };
+    const allowed = coin("TRUMP", { hourlyTrend: h });
+    const excluded = coin("PEPE", { hourlyTrend: h });
+    const filtered = customBrain(BRAINS.bizzy, { coins: ["TRUMP"], rules: "Only trade TRUMP." });
+    const allowedCtx = ctx("bizzy", bee("bizzy"), view([allowed, excluded]), undefined, hour);
+    const menu = filtered.menu(allowedCtx);
+    expect(Object.keys(menu)).toContain("BREAKOUT_LONG_TRUMP");
+    expect(Object.keys(menu)).not.toContain("BREAKOUT_LONG_PEPE");
+    expect(filtered.decisionEpoch?.(allowedCtx)).toBe(hour);
+    expect(filtered.validateOpen?.({ kind: "open", instId: allowed.instId, side: "long", sizeFrac: 1, setup: "strict" }, allowedCtx)).toBeNull();
+    expect(filtered.validateOpen?.({ kind: "open", instId: excluded.instId, side: "long", sizeFrac: 1, setup: "strict" }, allowedCtx)).not.toBeNull();
+
+    const staleHour = coin("TRUMP", { hourlyTrend: { ...h, closedAt: hour - 60 * 60_000 } });
+    const staleCtx = ctx("bizzy", bee("bizzy"), view([staleHour]), undefined, hour);
+    expect(filtered.decisionEpoch?.(staleCtx)).toBeNull();
+    const excludedOnly = ctx("bizzy", bee("bizzy"), view([excluded]), undefined, hour);
+    expect(filtered.decisionEpoch?.(excludedOnly)).toBeNull();
+    expect(filtered.validateOpen?.({ kind: "open", instId: excluded.instId, side: "long", sizeFrac: 1, setup: "strict" }, excludedOnly)).not.toBeNull();
   });
 
-  it("an unrestricted bee with no rules is the plain brain", () => {
-    expect(customBrain(BRAINS.boozy, { coins: [], rules: "" })).toBe(BRAINS.boozy);
-    const anyCoin = customBrain(BRAINS.boozy, { coins: [], rules: "Chase pumps." });
-    const c = ctx("boozy", bee("boozy"), market());
-    expect(Object.keys(anyCoin.menu(c))).toEqual(Object.keys(BRAINS.boozy.menu(c)));
+  it("retains Breezy's position rebalance for a custom coin-restricted bee", () => {
+    const btc = coin("BTC", { trend: trend({ score: 9, rv90Pct: 10 }) });
+    const eth = coin("ETH", { trend: trend({ score: 0, rv90Pct: 10 }) });
+    const held = bee("breezy", { position: position(btc) });
+    const c = ctx("breezy", held, view([btc, eth]));
+    const custom = customBrain(BRAINS.breezy, { coins: ["BTC"], rules: "Trade BTC only." });
+    expect(custom.rebalance?.(c)).toMatchObject({ kind: "add" });
   });
 
-  it("the brain is chosen from the coins", () => {
+
+  it("keeps Bizzy for any dynamic universe or owner-selected coins", () => {
+    expect(deriveStyle("bizzy", [])).toBe("bizzy");
+    expect(deriveStyle("bizzy", ["TRUMP", "DOGE"])).toBe("bizzy");
     expect(deriveStyle("breezy", ["ETH"])).toBe("breezy");
     expect(deriveStyle("breezy", [])).toBe("boozy");
-    expect(deriveStyle("bizzy", ["BTC", "HYPE"])).toBe("bizzy");
-    expect(deriveStyle("bizzy", ["TRUMP"])).toBe("boozy");
+    expect(deriveStyle("breezy", ["BTC", "DOGE"])).toBe("boozy");
     expect(deriveStyle("boozy", ["BTC"])).toBe("boozy");
   });
 });

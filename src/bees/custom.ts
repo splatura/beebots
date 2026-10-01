@@ -4,7 +4,6 @@
 // the brain offers; they cannot invent new kinds of move.
 import type { StyleId } from "../settings.js";
 import type { MarketView } from "../market/types.js";
-import { BIZZY_BREAKOUT_COINS } from "./bizzy.js";
 import { BREEZY_COINS } from "./breezy.js";
 import { coinOf, type BeeBrain, type BeeContext, type Intent, type Menu } from "./types.js";
 
@@ -15,14 +14,11 @@ export interface CustomRules {
   rules: string;
 }
 
-/**
- * The brain a designed bee runs on. Trend needs BTC/ETH only; Breakout needs its own four coins only; anything else
- * (including "any coin") runs on Momentum, which ranks every coin that passes the gates.
- */
+/** Trend is restricted to BTC/ETH; Bizzy's trend-breakout system works across its gated universe. */
 export function deriveStyle(wanted: StyleId, coins: string[]): StyleId {
   const within = (list: readonly string[]) => coins.length > 0 && coins.every((c) => list.includes(c));
+  if (wanted === "bizzy") return "bizzy";
   if (wanted === "breezy" && within(BREEZY_COINS)) return "breezy";
-  if (wanted === "bizzy" && within(BIZZY_BREAKOUT_COINS)) return "bizzy";
   return "boozy";
 }
 
@@ -68,8 +64,12 @@ export function customBrain(base: BeeBrain, o: CustomRules): BeeBrain {
       return f && allowed(f.instId) ? f : null;
     },
     sizeFrac: (intent, conviction, ctx) => base.sizeFrac(intent, conviction, narrow(ctx)),
+    ...(base.decisionEpoch ? { decisionEpoch: (ctx: BeeContext) => base.decisionEpoch!(narrow(ctx)) } : {}),
+    ...(base.validateOpen
+      ? { validateOpen: (intent: Extract<Intent, { kind: "open" | "switch" }>, ctx: BeeContext) => base.validateOpen!(intent, narrow(ctx)) }
+      : {}),
     ...(base.idleStatus ? { idleStatus: (ctx: BeeContext) => base.idleStatus!(narrow(ctx)) } : {}),
     ...(base.rebalance ? { rebalance: (ctx: BeeContext) => base.rebalance!(narrow(ctx)) } : {}),
-    // stopFor, trail, timeStopMinutes and openGate see the full market: they are about the coin the bee holds.
+    // stopFor, trail, timeStopMinutes, deterministicExit and openGate see the full market: they manage the held coin.
   };
 }

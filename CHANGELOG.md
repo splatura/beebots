@@ -8,7 +8,8 @@ and this project uses [Calendar Versioning](https://calver.org/) (`YYYY.M.D`).
 ## [Unreleased]
 
 The bees can now paper-trade OKX's **global** site, which is where OKX Australia accounts live, as well as
-OKX EEA X-Perps. Pick the venue with `OKX_SITE` in `.env`. EEA stays the default and behaves exactly as before.
+OKX EEA X-Perps. Pick the venue with `OKX_SITE` in `.env`. EEA remains the default; its existing venue and funding
+behavior is unchanged.
 On global, only paper trading (`MODE=dry`) is supported for now. Demo and live are planned next.
 
 ### Added
@@ -37,6 +38,18 @@ On global, only paper trading (`MODE=dry`) is supported for now. Demo and live a
   `test/funding-engine.test.ts`, plus global-venue cases in the config, REST, Hive and Setup tests.
 
 ### Changed
+
+- Bizzy's style is now a selective hourly long/short trend-breakout design, dynamically ranked across gated OKX
+  perpetuals. It accepts any eligible owner-selected coin set, unlike Breezy's BTC/ETH restriction. The new rules are
+  an unvalidated strategy hypothesis, not a profitability claim or deployment status.
+- Bizzy evaluates newly completed hourly closes, uses a 72-hour channel and trend filters, rejects entries chased by
+  more than 0.5 hourly ATR, plans 2% all-in equity risk with a 2-ATR fill stop, and trails at 3 ATR after one initial
+  stop distance of favorable movement. Two consecutive hourly EMA closes against the position exit deterministically.
+  It has no forced flat entry, midnight exit or holding-time limit.
+- Bizzy's daily trade/fee caps are 3 / $3. The removed `BIZZY_SIZE_FRACTION`, `BIZZY_UNIVERSE_SIZE` and
+  `BIZZY_TIME_STOP_MINUTES` controls are replaced by `BIZZY_SLIPPAGE_BPS` (5) and
+  `BIZZY_FUNDING_HORIZON_HOURS` (24, cost reserve only). Existing positions and ledgers are not reset by an engine
+  change.
 
 - `OKX_API_BASE` now defaults to the chosen venue's host. Startup refuses to run if it is set to a host that
   doesn't match `OKX_SITE`.

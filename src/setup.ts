@@ -15,7 +15,6 @@ import { BEES } from "./config.js";
 import { hashPassword, MAX_PASSWORD, MIN_PASSWORD, readJson, send } from "./gate.js";
 import { checkJevKey } from "./jev.js";
 import { log } from "./log.js";
-import { BIZZY_BREAKOUT_COINS } from "./bees/bizzy.js";
 import { BREEZY_COINS } from "./bees/breezy.js";
 import { deriveStyle } from "./bees/custom.js";
 import { fetchCoins } from "./okx/public.js";
@@ -90,7 +89,7 @@ export function finishDesign(raw: BeeDesign, known: string[]): BeeDesign {
   return out;
 }
 
-const STYLE_COINS: Partial<Record<BeeDesign["baseStyle"], readonly string[]>> = { bizzy: BIZZY_BREAKOUT_COINS, breezy: BREEZY_COINS };
+const STYLE_COINS: Partial<Record<BeeDesign["baseStyle"], readonly string[]>> = { breezy: BREEZY_COINS };
 const list = (xs: readonly string[]) => (xs.length > 1 ? `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}` : (xs[0] ?? ""));
 
 /** Says out loud why a bee runs on a different brain than the one it was designed for (Setup used to switch silently). */

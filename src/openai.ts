@@ -66,7 +66,7 @@ export async function designBee(apiKey: string, model: string, description: stri
             "- rules: the bee's trading instructions in plain English, 2-4 short imperative sentences, max 450 characters. " +
             "They are read by the decision model on every tick, so be concrete: which coins, when to go long or short, when to hold, when to get out. No prices or dates.\n" +
             "- coins: tickers the bee is restricted to, only from the list below, [] if the owner wants any coin.\n" +
-            "- baseStyle: the built-in engine it runs on. bizzy only if coins are all in BTC, ETH, SOL, HYPE; breezy only if coins are all in BTC, ETH; otherwise boozy.\n" +
+            "- baseStyle: the built-in engine it runs on. Bizzy is the selective hourly long/short trend-breakout style: prior-72-hour channel breakouts with EMA trend confirmation, accepts any eligible coins (or [] for any coin); breezy requires coins all in BTC, ETH; otherwise boozy, which accepts any coin.\n" +
             "- look: one or two sentences on what the bee looks like (props, outfit, mood) for its portrait. No real people's faces, no logos, no text.\n" +
             "Never give financial advice.\n\nBuilt-in engines:\n" +
             styles +

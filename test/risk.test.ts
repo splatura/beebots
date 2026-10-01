@@ -30,17 +30,20 @@ describe("caps", () => {
   });
 
   it("trade cap trips at the max and not one below", () => {
-    expect(evaluateCaps(ctx("bizzy", bee("bizzy", { tradesToday: 1 }), V)).cap).toBe("trade_cap");
-    expect(evaluateCaps(ctx("bizzy", bee("bizzy", { tradesToday: 0 }), V)).cap).toBeNull();
+    const cfg = testConfig({ BIZZY_MAX_TRADES_PER_DAY: "5" });
+    expect(evaluateCaps(ctx("bizzy", bee("bizzy", { tradesToday: 5 }), V, cfg)).cap).toBe("trade_cap");
+    expect(evaluateCaps(ctx("bizzy", bee("bizzy", { tradesToday: 4 }), V, cfg)).cap).toBeNull();
   });
 
   it("fee budget trips when spent and not before", () => {
-    expect(evaluateCaps(ctx("bizzy", bee("bizzy", { feesTodayUsd: 1.0 }), V)).cap).toBe("fee_budget");
-    expect(evaluateCaps(ctx("bizzy", bee("bizzy", { feesTodayUsd: 0.99 }), V)).cap).toBeNull();
+    const cfg = testConfig({ BIZZY_FEE_BUDGET_USD_DAY: "2" });
+    expect(evaluateCaps(ctx("bizzy", bee("bizzy", { feesTodayUsd: 2 }), V, cfg)).cap).toBe("fee_budget");
+    expect(evaluateCaps(ctx("bizzy", bee("bizzy", { feesTodayUsd: 1.99 }), V, cfg)).cap).toBeNull();
   });
 
   it("reports a trip only once", () => {
-    expect(evaluateCaps(ctx("bizzy", bee("bizzy", { tradesToday: 1 }), V)).tripped).toBe("trade_cap");
+    const cfg = testConfig({ BIZZY_MAX_TRADES_PER_DAY: "5" });
+    expect(evaluateCaps(ctx("bizzy", bee("bizzy", { tradesToday: 5 }), V, cfg)).tripped).toBe("trade_cap");
     expect(evaluateCaps(ctx("bizzy", bee("bizzy", { tradesToday: 6, cap: "trade_cap" }), V)).tripped).toBeNull();
   });
 
@@ -84,13 +87,6 @@ describe("code stops", () => {
     expect(run(ctx("bizzy", b, V), bizzy, null, "unreachable").action.kind).toBe("close");
   });
 
-  it("bizzy rides to the UTC day close: yesterday's trade is closed, today's is not", () => {
-    // NOW is 12:00 UTC. Opened 23:00 yesterday: its day closed at 23:59, so the time stop fires.
-    const old = bee("bizzy", { position: position(SOL, { openedAt: NOW - 13 * 60 * 60_000 }), flatSince: null });
-    expect(run(ctx("bizzy", old, V), bizzy, prop({ kind: "hold" })).forcedBy).toBe("time_stop");
-    const today = bee("bizzy", { position: position(SOL, { openedAt: NOW - 11 * 60 * 60_000 }), flatSince: null });
-    expect(run(ctx("bizzy", today, V), bizzy, prop({ kind: "hold" })).forcedBy).toBeNull();
-  });
 
   it("boozy has no time stop", () => {
     const b = bee("boozy", { position: position(SOL, { openedAt: NOW - 24 * 60 * 60_000 }), flatSince: null });
@@ -121,7 +117,7 @@ describe("Jev fail-closed", () => {
 
 describe("trade cap and fee budget: hold or close only", () => {
   it("vetoes an open when the trade cap is hit", () => {
-    const b = bee("bizzy", { tradesToday: 1 });
+    const b = bee("bizzy", { cap: "trade_cap" });
     const r = run(ctx("bizzy", b, V), bizzy, prop(open(SOL.instId)));
     expect(r.vetoedBy).toBe("trade_cap");
     expect(r.action.kind).toBe("none");
@@ -166,17 +162,11 @@ describe("spread gate", () => {
 describe("bizzy: waits for her breakout", () => {
   it("is never forced in, however long she has been flat", () => {
     const b = bee("bizzy", { flatSince: NOW - 10 * 60 * 60_000 });
-    const r = run(ctx("bizzy", b, view([coin("SOL", { breakout: { dayOpen: 100, prevRange: 4, trigger: 102 } }, 101)])), bizzy, null, "no_options");
+    const r = run(ctx("bizzy", b, V), bizzy, null, "no_options");
     expect(r.forcedBy).toBeNull();
     expect(r.action.kind).toBe("none");
-    expect(r.status).toBe("SOL is 0.99% from breakout");
   });
 
-  it("takes the breakout at full size (2x)", () => {
-    const r = run(ctx("bizzy", bee("bizzy"), V), bizzy, prop(open(SOL.instId, "long", "strict", 1)));
-    expect(r.action).toMatchObject({ kind: "open" });
-    expect((r.action as { notionalUsd: number }).notionalUsd).toBeCloseTo(666 * MARGIN_HEADROOM, 5);
-  });
 });
 
 describe("breezy: open gate and never flat", () => {
@@ -268,12 +258,6 @@ describe("no hold while flat, and menu sanity", () => {
     expect(r.forcedBy).toBe("max_flat");
   });
 
-  it("the 30-min global flat rule caps a bee's own limit", () => {
-    const cfg = testConfig({ BIZZY_MAX_FLAT_MINUTES: "45" });
-    expect(cfg.bees.bizzy.maxFlatMinutes).toBe(30);
-    const cfg2 = testConfig({ MAX_FLAT_MINUTES: "10" });
-    expect(cfg2.bees.bizzy.maxFlatMinutes).toBe(10);
-  });
 
   it("rejects close while flat and open while positioned", () => {
     expect(run(ctx("bizzy", bee("bizzy", { flatSince: NOW }), V), bizzy, prop({ kind: "close", reason: "x" })).vetoedBy).toBe("invalid_while_flat");

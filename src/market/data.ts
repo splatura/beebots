@@ -2,7 +2,7 @@ import { log } from "../log.js";
 import type { PublicApi } from "../okx/public.js";
 import { VENUES, type Venue } from "../okx/venue.js";
 import { safeError } from "../redact.js";
-import { atr, bollinger, macd, pctChange, rsi, trendStats, zScore } from "./indicators.js";
+import { atr, bollinger, hourlyTrendStats, macd, pctChange, rsi, trendStats, zScore } from "./indicators.js";
 import type { Candle, CoinStats, Instrument, MarketView, Ticker } from "./types.js";
 import { gateUniverse } from "./universe.js";
 
@@ -67,6 +67,7 @@ export function computeStats(inst: Instrument, t: Ticker, c15: Candle[], c1h: Ca
     oiChg1hPct: null,
     newsZ: null,
     sentiment: null,
+    hourlyTrend: hourlyTrendStats(c1h),
   };
 }
 
@@ -169,11 +170,11 @@ export class MarketFeed {
             s.fundingPct = funding.rate * 100;
             s.fundingZ = fHist.length ? zScore(funding.rate, fHist) : null;
             s.fundingAt = Number.isFinite(funding.fundingAt) ? funding.fundingAt : null;
+            s.fundingIntervalMs = funding.intervalMs ?? null;
           }
           s.oiUsd = oi.get(id) ?? null;
           s.oiChg1hPct = this.oiChange1h(id, now);
           if (c4h) s.trend = trendStats(c4h);
-          s.breakout = breakoutLevels(c1h, now, BREAKOUT_K);
           next.set(id, s);
         } catch (err) {
           log.warn("market data failed for coin", { instId: id, err: safeError(err) });
@@ -223,18 +224,3 @@ export class MarketFeed {
   }
 }
 
-/** Larry Williams k: the trigger is today's open plus k x yesterday's high-low range (k = 0.5 in the source). */
-export const BREAKOUT_K = 0.5;
-
-/** Today's UTC-day open and yesterday's full range from 1h candles; null until a full previous day is available. */
-export function breakoutLevels(c1h: Candle[], now: number, k: number): { dayOpen: number; prevRange: number; trigger: number } | null {
-  const day = 86_400_000;
-  const t0 = Math.floor(now / day) * day;
-  const sorted = [...c1h].sort((a, b) => a.ts - b.ts);
-  const today = sorted.filter((c) => c.ts >= t0);
-  const prev = sorted.filter((c) => c.ts >= t0 - day && c.ts < t0);
-  if (!today.length || prev.length < 20) return null;
-  const dayOpen = today[0]!.o;
-  const prevRange = Math.max(...prev.map((c) => c.h)) - Math.min(...prev.map((c) => c.l));
-  return { dayOpen, prevRange, trigger: dayOpen + k * prevRange };
-}

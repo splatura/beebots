@@ -117,9 +117,8 @@ Your sentence becomes two things the engine enforces, and one it passes on:
 
 - **Coins.** If your bee names coins, it only ever trades those. They must be crypto perpetuals listed on OKX EEA right
   now (Setup checks the live list and asks you to rephrase if none match).
-- **The engine it runs on.** Every bee runs on one of three built-in trading styles below. A bee limited to BTC and/or
-  ETH can run on Trend; one limited to BTC, ETH, SOL or HYPE can run on Breakout; everything else runs on Momentum,
-  which works on any coin.
+- **Style choice.** BTC/ETH-only bees may run on Breezy's Trend style. Bizzy's Trend Breakout style works with any
+  eligible universe, including an owner-selected coin list. Other designs use Momentum, which works on any coin.
 - **Rules.** Its rules go to Jev with every decision, and Jev follows them when picking among the moves the style
   offers. They steer the choice; they can't invent moves the style doesn't have, and the risk layer below still applies.
 
@@ -130,27 +129,30 @@ doesn't, the bee just waits until it does.
 
 | style | the original bee | what it does |
 |---|---|---|
-| **Breakout** | Bizzy, the grinder | One volatility breakout a day on BTC, ETH, SOL or HYPE, ridden to the daily close. |
+| **Trend Breakout** | Bizzy, the grinder | Selective hourly long/short breakouts across the dynamically ranked top 30 gated perps. |
 | **Trend** | Breezy, the calculated one | Trend following on BTC and ETH only. Few trades, rides winners, sized by volatility. |
 | **Momentum** | Boozy, the degen | Chases the strongest 7-day mover across every liquid coin, and adds to winners. |
 
 Bizzy, Breezy and Boozy are the official bees (they run on [beebots.tech](https://beebots.tech)), so their names and art
-are theirs; your bees get their own. Two of your bees can share a style. The full rules are in [`strategies/`](strategies/), and the rules every bee
-shares (caps, stops, "never flat for long") are in [`strategies/DRAMA_RULES.md`](strategies/DRAMA_RULES.md).
+are theirs; your bees get their own. Two of your bees can share a style. Bizzy's new rules are an unproven hypothesis,
+not a profitability claim or a statement that a deployment has switched; existing ledgers are not reset and existing
+positions are managed in place. The full rules are in [`strategies/`](strategies/), and shared safety limits are in
+[`strategies/DRAMA_RULES.md`](strategies/DRAMA_RULES.md).
 
 ## How a decision is made
 
-Every tick, for every bee:
+The engine reviews market state every tick, but each style decides when Jev is needed.
 
-1. **Look.** Live OKX market data: tickers, candles, RSI, MACD, ATR, Bollinger, Donchian, funding, open interest.
+1. **Look.** Live OKX market data: tickers, candles, indicators, funding and open interest.
 2. **Summarise.** A small numeric snapshot of the market and the bee's own position.
-3. **Ask Jev.** Jev picks one move from a menu of moves that are actually valid right now, with probabilities.
+3. **Ask Jev when needed.** Jev picks from valid menu options. Bizzy asks only on a new hourly decision epoch when
+   breakout entries exist; when none exist the menu is empty and Jev is skipped. Other styles keep their own cadence.
 4. **Check.** Plain code can veto, shrink or force the move: max 2x leverage, per-bee stops, a daily loss stop,
    trade caps, a fee budget, cooldowns, and a hard daily cap on Jev spending.
 5. **Record, then act.** The decision is written to SQLite before anything happens.
 6. **Broadcast.** The dashboard streams it live.
 
-Jev is stateless and never sees an order endpoint. If Jev is down or slow, the bees hold and open nothing.
+Jev is stateless and never sees an order endpoint. If Jev is down or slow, the bees do not open new positions.
 
 ## Settings
 

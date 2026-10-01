@@ -11,8 +11,8 @@ export type StyleId = (typeof STYLES)[number];
 
 export const STYLE_INFO: Record<StyleId, { label: string; blurb: string; name: string; tagline: string }> = {
   bizzy: {
-    label: "Breakout",
-    blurb: "One volatility breakout a day on BTC, ETH, SOL or HYPE, ridden to the daily close. Patient, then all in.",
+    label: "Trend Breakout",
+    blurb: "Selective hourly trend breakouts across liquid OKX perps, long or short. Patient entries, volatility-based risk.",
     name: "Bizzy",
     tagline: "the grinder",
   },

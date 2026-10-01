@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { MARGIN_HEADROOM } from "../src/bees/common.js";
-import { bizzy, fadeSetup } from "../src/bees/bizzy.js";
+import { bizzy } from "../src/bees/bizzy.js";
 import { boozy, rankCandidates } from "../src/bees/boozy.js";
 import { breezy, breezySizeFrac } from "../src/bees/breezy.js";
 import { buildSnapshot } from "../src/snapshot.js";
@@ -15,7 +15,6 @@ describe("drama rule 1: no do-nothing option while flat", () => {
     coin("SOL", { ret24hPct: 12, rsi14: 25, pctB: -0.2 }),
   ]);
   for (const [id, brain] of [["bizzy", bizzy], ["breezy", breezy], ["boozy", boozy]] as const) {
-    // bizzy (breakout hunter since 2026-09-24) waits for her trigger instead; see "bizzy breakout" below.
     if (id !== "bizzy") it(`${id}: flat menu has real moves and no hold`, () => {
       const m = brain.menu(ctx(id, bee(id), v));
       expect(Object.keys(m).length).toBeGreaterThan(0);
@@ -30,55 +29,6 @@ describe("drama rule 1: no do-nothing option while flat", () => {
   }
 });
 
-describe("bizzy setups", () => {
-  it("strict long needs rsi<30 AND close below the lower band", () => {
-    expect(fadeSetup(coin("A", { rsi14: 29, pctB: -0.01 }))).toMatchObject({ side: "long", strict: true });
-    expect(fadeSetup(coin("A", { rsi14: 31, pctB: -0.01 }))).toBeNull();
-    expect(fadeSetup(coin("A", { rsi14: 29, pctB: 0.01 }))).toBeNull();
-  });
-  it("strict short needs rsi>70 AND close above the upper band", () => {
-    expect(fadeSetup(coin("A", { rsi14: 71, pctB: 1.01 }))).toMatchObject({ side: "short", strict: true });
-    expect(fadeSetup(coin("A", { rsi14: 69, pctB: 1.01 }))).toBeNull();
-  });
-  it("funding z > 1.5 removes the long setup", () => {
-    expect(fadeSetup(coin("A", { rsi14: 25, pctB: -0.2, fundingZ: 1.6 }))).toBeNull();
-  });
-});
-
-describe("bizzy breakout (one Larry Williams breakout a day)", () => {
-  const lvl = { dayOpen: 100, prevRange: 4, trigger: 102 };
-  it("offers BREAKOUT_<coin> only once price is through today's trigger, plus WAIT", () => {
-    const through = coin("SOL", { breakout: lvl }, 102.5);
-    const below = coin("BTC", { breakout: { dayOpen: 100, prevRange: 4, trigger: 102 } }, 101);
-    const m = bizzy.menu(ctx("bizzy", bee("bizzy"), view([through, below])));
-    expect(m.BREAKOUT_SOL!.intent).toMatchObject({ kind: "open", side: "long", sizeFrac: 1 });
-    expect(m.BREAKOUT_BTC).toBeUndefined();
-    expect(m.WAIT).toBeDefined();
-  });
-  it("nothing through its trigger = empty menu, so Jev is not asked", () => {
-    const m = bizzy.menu(ctx("bizzy", bee("bizzy"), view([coin("SOL", { breakout: lvl }, 101)])));
-    expect(Object.keys(m)).toEqual([]);
-  });
-  it("only BTC, ETH, SOL and HYPE inside her spread gate", () => {
-    const v = view([coin("SOL", { breakout: lvl, spreadBp: 4.9 }), coin("PUMP", { breakout: lvl }), coin("ETH", { breakout: lvl, spreadBp: 12 })]);
-    expect(bizzy.universe(ctx("bizzy", bee("bizzy"), v))).toEqual(["SOL-USD_UM_XPERP-310404"]);
-  });
-  it("idle status says how far the nearest coin is from its trigger", () => {
-    expect(bizzy.idleStatus!(ctx("bizzy", bee("bizzy"), view([coin("SOL", { breakout: lvl }, 101)])))).toBe("SOL is 0.99% from breakout");
-  });
-  it("positioned: HOLD always, CUT_LOSS only while losing", () => {
-    const s = coin("SOL", { breakout: lvl }, 103);
-    const win = bizzy.menu(ctx("bizzy", bee("bizzy", { position: position(s), flatSince: null, uplUsd: 1 }), view([s])));
-    expect(win.HOLD).toBeDefined();
-    expect(win.CUT_LOSS).toBeUndefined();
-    const lose = bizzy.menu(ctx("bizzy", bee("bizzy", { position: position(s), flatSince: null, uplUsd: -1 }), view([s])));
-    expect(lose.CUT_LOSS).toBeDefined();
-  });
-  it("stop is today's open (a failed breakout)", () => {
-    const s = coin("SOL", { breakout: lvl }, 103);
-    expect(bizzy.stopFor(s.instId, "long", 102.5, ctx("bizzy", bee("bizzy"), view([s])))).toBe(100);
-  });
-});
 
 describe("breezy", () => {
   it("sizes max(0.5, |score|/9) of max, capped by the 60% vol limit", () => {

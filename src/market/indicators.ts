@@ -1,7 +1,7 @@
 // Hand-rolled indicators on X-Perp candles (the kit's indicator tools are only documented for SWAP/SPOT ids).
 // All inputs are oldest-first. Each function returns null when there is not enough data.
 
-import type { Candle, TrendStats } from "./types.js";
+import type { Candle, HourlyTrendStats, TrendStats } from "./types.js";
 
 export function ema(values: number[], period: number): number[] {
   if (values.length === 0) return [];
@@ -166,5 +166,39 @@ export function trendStats(c4h: Candle[]): TrendStats {
     atr4hPct: a !== null && last ? (a / last) * 100 : null,
     rv90Pct: realisedVolPct(closes, 90, 6 * 365),
     tenDayExtreme,
+  };
+}
+
+/** Hourly breakout inputs never include a forming candle or bridge a gap in the seven-day window. */
+export function hourlyTrendStats(c1h: Candle[]): HourlyTrendStats | null {
+  const bars = c1h.filter((c) => c.confirmed);
+  if (bars.length < 169) return null;
+  const window = bars.slice(-169);
+  for (let i = 0; i < window.length; i++) {
+    const c = window[i]!;
+    if (![c.ts, c.o, c.h, c.l, c.c].every(Number.isFinite) || !(c.c > 0) || c.h < c.l) return null;
+    if (i && c.ts - window[i - 1]!.ts !== 3_600_000) return null;
+  }
+  // Do not let older gaps or malformed bars contaminate the EMA/ATR seed.
+  const closes = window.map((c) => c.c);
+  const fast = ema(closes, 24);
+  const slow = ema(closes, 72);
+  const last = window[168]!;
+  const prior = closes.slice(-73, -1);
+  const a = atr(window);
+  const rv = realisedVolPct(closes, 168, 1);
+  if (a === null || rv === null || !Number.isFinite(a) || !Number.isFinite(rv)) return null;
+  return {
+    closedAt: last.ts + 3_600_000,
+    close: last.c,
+    channelHigh: Math.max(...prior),
+    channelLow: Math.min(...prior),
+    ema24: fast[168]!,
+    ema72: slow[168]!,
+    belowEma24: [closes[167]! < fast[167]!, last.c < fast[168]!],
+    aboveEma24: [closes[167]! > fast[167]!, last.c > fast[168]!],
+    atr14: a,
+    ret7dPct: pctChange(closes[0], last.c)!,
+    volatilityPct: rv,
   };
 }

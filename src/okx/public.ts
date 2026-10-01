@@ -109,7 +109,14 @@ export function createPublicApi(
     async funding(instId) {
       // The kit CLI refuses X-Perp ids for funding-rate, so this is a direct GET on both venues.
       const [r] = await get<Row[]>("/api/v5/public/funding-rate", { instId }, PUBLIC_TTL_MS.funding);
-      return { rate: num(r?.fundingRate), fundingAt: num(r?.fundingTime) };
+      const fundingAt = num(r?.fundingTime);
+      const nextFundingAt = num(r?.nextFundingTime);
+      const intervalMs = nextFundingAt - fundingAt;
+      return {
+        rate: num(r?.fundingRate),
+        fundingAt,
+        ...(Number.isFinite(nextFundingAt) && nextFundingAt > fundingAt ? { nextFundingAt, intervalMs } : {}),
+      };
     },
     async fundingHistory(instId, limit) {
       const rows = await get<Row[]>("/api/v5/public/funding-rate-history", { instId, limit }, PUBLIC_TTL_MS.funding);

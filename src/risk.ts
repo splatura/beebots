@@ -3,6 +3,7 @@
 
 import { maxNotionalUsd, minutesSince, positionNotional } from "./bees/common.js";
 import type { Action, BeeBrain, BeeContext, CapReason, Intent } from "./bees/types.js";
+import { contractsFor } from "./exec/sizing.js";
 
 export type { Action } from "./bees/types.js";
 
@@ -117,9 +118,14 @@ function checkOpen(intent: Intent, input: RiskInput, conviction: number): OpenCh
   if (intent.side === "long" && brain.fundingVetoLongZ !== undefined && s.fundingZ !== null && s.fundingZ > brain.fundingVetoLongZ) {
     return { ok: false, why: `funding_veto ${s.coin} z=${s.fundingZ.toFixed(1)}` };
   }
+  const invalid = brain.validateOpen?.(intent, ctx);
+  if (invalid) return { ok: false, why: invalid };
   const frac = Math.max(0, Math.min(1, brain.sizeFrac(intent, conviction, ctx)));
   const n = Math.min(frac * max, max);
-  const minUsd = inst.minSz * inst.ctVal * s.mid;
+  if (!Number.isFinite(n)) return { ok: false, why: "invalid_size" };
+  const px = brain.executionPrice?.(intent.side, s) ?? s.mid;
+  if (brain.executionPrice && contractsFor(n, inst, px) <= 0) return { ok: false, why: `below_min_size ${s.coin}` };
+  const minUsd = inst.minSz * inst.ctVal * px;
   if (n < minUsd) return { ok: false, why: `below_min_size ${s.coin} $${n.toFixed(2)} < $${minUsd.toFixed(2)}` };
   return { ok: true, notionalUsd: n };
 }
@@ -173,6 +179,8 @@ export function applyRisk(input: RiskInput): RiskResult {
     if (ts !== undefined && minutesSince(p.openedAt, now) >= ts) {
       return out({ kind: "close", reason: "time_stop" }, { forcedBy: "time_stop", vetoedBy: proposal ? "time_stop" : null, status: `time stop on ${p.coin}` });
     }
+    const exit = brain.deterministicExit?.(ctx);
+    if (exit) return out({ kind: "close", reason: exit }, { forcedBy: exit, vetoedBy: proposal ? exit : null, status: `${exit} on ${p.coin}` });
   }
 
   // 3. Jev fail-closed: hold whatever we have, open nothing.
